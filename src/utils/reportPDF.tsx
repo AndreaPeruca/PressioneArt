@@ -326,12 +326,15 @@ function computeStats(sessions: BPSession[]): Stats {
     optimal: 0, normal: 0, 'high-normal': 0, grade1: 0, grade2: 0, grade3: 0,
   };
   for (const s of sessions) cats[s.category]++;
-  const dominant = ALL_CATS.reduce((a, b) => cats[b] > cats[a] ? b : a, 'optimal' as BPCategory);
+  const avgSys = avg(sessions.map(s => s.systolic));
+  const avgDia = avg(sessions.map(s => s.diastolic));
+  // ESC/ESH classifies the patient on their overall mean, not the most frequent category
+  const dominant = classifyBP(avgSys, avgDia);
   return {
-    avgSys:   avg(sessions.map(s => s.systolic)),
+    avgSys,
     minSys:   minOf(sessions.map(s => s.systolic)),
     maxSys:   maxOf(sessions.map(s => s.systolic)),
-    avgDia:   avg(sessions.map(s => s.diastolic)),
+    avgDia,
     minDia:   minOf(sessions.map(s => s.diastolic)),
     maxDia:   maxOf(sessions.map(s => s.diastolic)),
     avgHR:    avg(sessions.map(s => s.heartRate)),
@@ -533,7 +536,7 @@ const DistributionBar: React.FC<{ stats: Stats; total: number }> = ({ stats, tot
 const Footer: React.FC = () => (
   <View style={s.footer} fixed>
     <Text style={s.footerText}>
-      ESC/ESH 2023 HBPM — Ottimale: &lt;120/70 | Normale: 120–129/70–79 | Norm-Alta: 130–134/80–84 | Grado 1: 135–149/85–94 | Grado 2: 150–179/95–109 | Grado 3: ≥180/≥110
+      ESC/ESH 2023 HBPM — Ottimale: &lt;120/70 | Normale: 120-129/70-79 | Norm-Alta: 130-134/80-84 | Grado 1: 135-149/85-94 | Grado 2: 150-179/95-109 | Grado 3: &gt;=180/&gt;=110
     </Text>
     <Text style={s.footerBold}>Pressione PWA · Dati locali, zero cloud</Text>
   </View>
@@ -562,8 +565,10 @@ const ReportDocument: React.FC<ReportOptions> = ({
 
   const stats    = computeStats(sessions);
   const weeks    = groupByWeek(sessions);
-  const morning  = sessions.filter(s => new Date(s.timestamp).getHours() < 13);
-  const evening  = sessions.filter(s => new Date(s.timestamp).getHours() >= 13);
+  // ESC/ESH 2023: morning window = within 1h of waking, before medication/breakfast (6–10h)
+  // Evening window = before bedtime (18–22h)
+  const morning  = sessions.filter(s => { const h = new Date(s.timestamp).getHours(); return h >= 6 && h < 10; });
+  const evening  = sessions.filter(s => { const h = new Date(s.timestamp).getHours(); return h >= 18 && h < 23; });
   const domColor = C.catColors[stats.dominant];
   const domLabel = C.catLabels[stats.dominant];
 
@@ -705,7 +710,7 @@ const ReportDocument: React.FC<ReportOptions> = ({
               <View style={s.splitRow}>
                 {morning.length > 0 && (
                   <View style={s.splitCard}>
-                    <Text style={s.splitTitle}>🌅  Mattina  (prima delle 13:00)</Text>
+                    <Text style={s.splitTitle}>Mattina  (06:00–10:00, ESC/ESH)</Text>
                     <Text style={[s.splitValue, { color: C.rose }]}>
                       {avg(morning.map(s => s.systolic))}/{avg(morning.map(s => s.diastolic))}
                     </Text>
@@ -720,7 +725,7 @@ const ReportDocument: React.FC<ReportOptions> = ({
                 )}
                 {evening.length > 0 && (
                   <View style={s.splitCard}>
-                    <Text style={s.splitTitle}>🌙  Sera  (dopo le 13:00)</Text>
+                    <Text style={s.splitTitle}>Sera  (18:00–23:00, ESC/ESH)</Text>
                     <Text style={[s.splitValue, { color: C.indigo }]}>
                       {avg(evening.map(s => s.systolic))}/{avg(evening.map(s => s.diastolic))}
                     </Text>
