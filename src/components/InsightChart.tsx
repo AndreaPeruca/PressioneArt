@@ -292,10 +292,7 @@ const InsightChart: React.FC<InsightChartProps> = ({ data, period }) => {
           />
 
           <YAxis
-            domain={([dataMin, dataMax]: [number, number]) => [
-              Math.max(40, Math.floor(dataMin / 10) * 10 - 10),
-              Math.max(200, Math.ceil(dataMax / 10) * 10 + 10),
-            ]}
+            domain={[(dataMin: number) => Math.max(40, Math.floor(dataMin / 10) * 10 - 10), (dataMax: number) => Math.max(200, Math.ceil(dataMax / 10) * 10 + 10)]}
             tick={{ fill: '#64748b', fontSize: 10 }}
             tickLine={false}
             axisLine={false}
