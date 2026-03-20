@@ -12,7 +12,6 @@ const SECURITY_HEADERS = {
   'Referrer-Policy':         'no-referrer',
   'Permissions-Policy':      'camera=(), microphone=(), geolocation=(), payment=()',
   'Cross-Origin-Opener-Policy':   'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
 // https://vite.dev/config/
