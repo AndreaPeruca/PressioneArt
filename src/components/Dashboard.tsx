@@ -17,6 +17,7 @@ import ImportModal from './ImportModal';
 // Lazy-loaded: @react-pdf/renderer is ~1.5 MB — defer until the user opens the modal
 const ReportModal = lazy(() => import('./ReportModal'));
 import { generateDemoData } from '../utils/demoData';
+import { exportSessionsCSV } from '../utils/csvExport';
 import { isHypertensiveCrisis } from '../db/database';
 import type {
   BPCategory,
@@ -509,6 +510,19 @@ const Dashboard: React.FC = () => {
                 <line x1="16" y1="17" x2="8" y2="17" />
               </svg>
               PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => exportSessionsCSV(sessions)}
+              disabled={sessions.length === 0}
+              className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300 hover:text-emerald-100 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 px-3 py-1.5 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label="Esporta dati in CSV"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              CSV
             </button>
             <button
               type="button"

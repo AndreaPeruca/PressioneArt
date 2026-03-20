@@ -352,13 +352,16 @@ function groupByWeek(sessions: BPSession[]): { week: string; label: string; sess
     const monday = new Date(d);
     const day = d.getDay() === 0 ? 7 : d.getDay();
     monday.setDate(d.getDate() - day + 1);
-    const key = monday.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+    const key = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
     const arr = map.get(key) ?? [];
     arr.push(s);
     map.set(key, arr);
   }
   return Array.from(map.entries())
-    .map(([label, ss]) => ({ week: label, label: `Sett. dal ${label}`, sessions: ss }))
+    .map(([key, ss]) => {
+      const [, mm, dd] = key.split('-');
+      return { week: key, label: `Sett. dal ${dd}/${mm}`, sessions: ss };
+    })
     .slice(-8); // last 8 weeks
 }
 
@@ -371,23 +374,25 @@ const PAD_BTM    = 28;
 const PAD_LEFT   = 34;
 const PAD_RIGHT  = 10;
 const BP_MIN     = 50;
-const BP_MAX     = 200;
 
-function bpToY(mmHg: number): number {
-  const ratio = (mmHg - BP_MIN) / (BP_MAX - BP_MIN);
-  return CHART_H - PAD_BTM - ratio * (CHART_H - PAD_TOP - PAD_BTM);
+function makeBpToY(bpMax: number) {
+  return (mmHg: number) => {
+    const ratio = (mmHg - BP_MIN) / (bpMax - BP_MIN);
+    return CHART_H - PAD_BTM - ratio * (CHART_H - PAD_TOP - PAD_BTM);
+  };
 }
 
 function idxToX(i: number, n: number): number {
   return PAD_LEFT + (i / Math.max(n - 1, 1)) * (CHART_W - PAD_LEFT - PAD_RIGHT);
 }
 
-// Reference lines config
+// ESC/ESH 2023 HBPM reference lines (corrected from office thresholds)
 const REF_LINES = [
-  { y: 120, color: '#10b981', label: '120' },
-  { y: 130, color: '#f59e0b', label: '130' },
-  { y: 140, color: '#f97316', label: '140' },
-  { y: 160, color: '#ef4444', label: '160' },
+  { y: 120, color: '#10b981' },
+  { y: 130, color: '#f59e0b' },
+  { y: 135, color: '#f97316' },  // HBPM Grade 1 (not 140!)
+  { y: 150, color: '#ef4444' },  // HBPM Grade 2
+  { y: 180, color: '#b91c1c' },  // HBPM Grade 3 boundary
 ];
 
 interface TrendChartProps { sessions: BPSession[] }
@@ -403,6 +408,11 @@ const TrendChart: React.FC<TrendChartProps> = ({ sessions }) => {
     );
   }
   const n = sessions.length;
+
+  // Dynamic Y ceiling: always at least 200, extends if data exceeds it
+  const maxSys  = Math.max(...sessions.map(s => s.systolic));
+  const bpMax   = Math.max(200, Math.ceil(maxSys / 20) * 20 + 20);
+  const bpToY   = makeBpToY(bpMax);
 
   const sysPoints  = sessions.map((s, i) => `${idxToX(i, n)},${bpToY(s.systolic)}`).join(' ');
   const diaPoints  = sessions.map((s, i) => `${idxToX(i, n)},${bpToY(s.diastolic)}`).join(' ');
@@ -420,8 +430,9 @@ const TrendChart: React.FC<TrendChartProps> = ({ sessions }) => {
       return { x, label };
     });
 
-  // Y-axis ticks
-  const yTicks = [60, 80, 100, 120, 140, 160, 180, 200];
+  // Y-axis ticks up to bpMax
+  const yTicks: number[] = [];
+  for (let bp = 60; bp <= bpMax; bp += 20) yTicks.push(bp);
 
   return (
     <Svg width={CHART_W} height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`}>
@@ -472,7 +483,7 @@ const TrendChart: React.FC<TrendChartProps> = ({ sessions }) => {
       ))}
 
       {/* Y-axis labels */}
-      {[80, 120, 140, 160, 200].map(bp => (
+      {yTicks.filter(bp => bp >= 80).map(bp => (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         <Text key={bp} {...{ x: PAD_LEFT - 4, y: bpToY(bp) + 2, fontSize: 6, fill: C.slate500, textAnchor: 'end' } as any}>
           {bp}

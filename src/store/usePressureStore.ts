@@ -16,6 +16,13 @@
 
 import { create } from 'zustand';
 import { db } from '../db/database';
+
+// ─── Cross-tab sync ───────────────────────────────────────────────────────────
+// BroadcastChannel notifies other open tabs when data changes so they refresh.
+// Messages are NOT sent back to the originating tab, preventing double-fetches.
+const syncChannel = typeof BroadcastChannel !== 'undefined'
+  ? new BroadcastChannel('pressione-sync')
+  : null;
 import type {
   BPSession,
   ChartDataPoint,
@@ -62,7 +69,13 @@ interface PressureState {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-export const usePressureStore = create<PressureState>((set, get) => ({
+export const usePressureStore = create<PressureState>((set, get) => {
+  // Listen for changes made in other tabs
+  syncChannel?.addEventListener('message', () => {
+    get().fetchSessions();
+  });
+
+  return {
   sessions:  [],
   chartData: [],
   isLoading: false,
@@ -88,6 +101,7 @@ export const usePressureStore = create<PressureState>((set, get) => ({
     try {
       await db.addSession(payload);
       await get().fetchSessions();
+      syncChannel?.postMessage('refresh');
     } catch (err) {
       set({
         error: err instanceof Error ? err.message : 'Errore nel salvataggio.',
@@ -102,6 +116,7 @@ export const usePressureStore = create<PressureState>((set, get) => ({
     try {
       await db.deleteSession(sessionId);
       await get().fetchSessions();
+      syncChannel?.postMessage('refresh');
     } catch (err) {
       set({
         error: err instanceof Error ? err.message : 'Errore nella cancellazione.',
@@ -115,6 +130,7 @@ export const usePressureStore = create<PressureState>((set, get) => ({
     try {
       await db.clearAllMeasurements();
       set({ sessions: [], chartData: [], isLoading: false });
+      syncChannel?.postMessage('refresh');
     } catch (err) {
       set({
         error: err instanceof Error ? err.message : 'Errore.',
@@ -128,6 +144,7 @@ export const usePressureStore = create<PressureState>((set, get) => ({
     try {
       const { inserted, skipped } = await db.addManyMeasurements(rows);
       await get().fetchSessions();
+      syncChannel?.postMessage('refresh');
       if (skipped > 0) {
         set({
           error: `${skipped} ${skipped === 1 ? 'riga ignorata perché già presente' : 'righe ignorate perché già presenti'} nel database (±1 minuto).`,
@@ -144,7 +161,8 @@ export const usePressureStore = create<PressureState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
-}));
+  }; // end return
+}); // end create
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 

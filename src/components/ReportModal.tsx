@@ -84,6 +84,12 @@ const ReportModal: React.FC<ReportModalProps> = ({
 
   const periodSessions = sessions.length;
 
+  // Helvetica only supports Latin-1 (U+0000–U+00FF). Warn if any note
+  // contains characters outside this range so the user knows before generating.
+  const hasNonLatinNotes = sessions.some(
+    (s) => s.note && /[^\u0000-\u00FF]/.test(s.note),
+  );
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -200,6 +206,15 @@ const ReportModal: React.FC<ReportModalProps> = ({
                         </p>
                       </div>
                     </div>
+
+                    {hasNonLatinNotes && (
+                      <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+                        <span className="text-amber-400 text-sm flex-shrink-0 mt-0.5" aria-hidden="true">⚠️</span>
+                        <p className="text-xs text-amber-300 leading-relaxed">
+                          Alcune note contengono caratteri non supportati dal font del PDF (emoji, caratteri non latini). Appariranno come <strong>□</strong> nel documento.
+                        </p>
+                      </div>
+                    )}
 
                     <motion.button
                       type="button"
