@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pressione — Monitoraggio Pressione Arteriosa</title>
+
+    <!--
+      Content Security Policy
+      ─────────────────────────────────────────────────────────────────────────
+      Restricts what the browser will execute/load for this origin.
+      Key choices:
+        script-src 'self' blob:   – no inline scripts; blob: needed for
+                                    @react-pdf/renderer Web Worker
+        style-src  'self' 'unsafe-inline' – Tailwind injects a style block
+                                    in both dev and production builds
+        img-src    data: blob:    – avatars / chart images may be data URIs
+        font-src   data:          – react-pdf embeds fonts as data URIs
+        worker-src blob:          – react-pdf PDF generation worker
+        frame-ancestors 'none'   – blocks clickjacking via <iframe> embed
+        object-src 'none'         – disables Flash / Java plugins
+        base-uri   'self'         – prevents base-tag injection
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src  'self' blob:;
+        style-src   'self' 'unsafe-inline';
+        img-src     'self' data: blob:;
+        font-src    'self' data:;
+        connect-src 'self';
+        worker-src  'self' blob:;
+        object-src  'none';
+        frame-ancestors 'none';
+        base-uri    'self';
+        form-action 'self';
+      "
+    />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="no-referrer" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
