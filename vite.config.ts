@@ -21,6 +21,11 @@ export default defineConfig({
     tailwindcss(),
     react(),
   ],
+  build: {
+    // reportPDF chunk (~1.5 MB) is lazy-loaded on demand — only when the user opens
+    // the report modal. Raise the warning threshold accordingly.
+    chunkSizeWarningLimit: 1600,
+  },
   server: {
     headers: SECURITY_HEADERS,
   },

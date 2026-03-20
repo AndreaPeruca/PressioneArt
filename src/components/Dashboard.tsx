@@ -5,7 +5,7 @@
  * Displays session-based data (ESC/ESH HBPM protocol).
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePressureStore, selectLatestSession } from '../store/usePressureStore';
 import SessionForm from './SessionForm';
@@ -13,7 +13,9 @@ import InsightChart from './InsightChart';
 import PrivacyWidget from './PrivacyWidget';
 import StatsCard from './StatsCard';
 import ImportModal from './ImportModal';
-import ReportModal from './ReportModal';
+
+// Lazy-loaded: @react-pdf/renderer is ~1.5 MB — defer until the user opens the modal
+const ReportModal = lazy(() => import('./ReportModal'));
 import { generateDemoData } from '../utils/demoData';
 import { isHypertensiveCrisis } from '../db/database';
 import type {
@@ -660,12 +662,14 @@ const Dashboard: React.FC = () => {
         onImport={handleImport}
       />
 
-      <ReportModal
-        isOpen={isReportOpen}
-        onClose={() => setReportOpen(false)}
-        sessions={filteredSessions}
-        periodLabel={PERIOD_LABELS[period]}
-      />
+      <Suspense fallback={null}>
+        <ReportModal
+          isOpen={isReportOpen}
+          onClose={() => setReportOpen(false)}
+          sessions={filteredSessions}
+          periodLabel={PERIOD_LABELS[period]}
+        />
+      </Suspense>
     </div>
   );
 };
