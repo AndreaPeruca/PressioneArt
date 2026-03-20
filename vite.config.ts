@@ -7,6 +7,8 @@ import tailwindcss from '@tailwindcss/vite'
 // should also be set at the hosting layer — the meta tags in index.html serve
 // as a fallback for static hosts that don't support custom headers.
 const SECURITY_HEADERS = {
+  // Note: unsafe-eval is required by @react-pdf/renderer (Emscripten WASM runtime)
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
   'X-Content-Type-Options':  'nosniff',
   'X-Frame-Options':         'DENY',
   'Referrer-Policy':         'no-referrer',
