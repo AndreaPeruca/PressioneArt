@@ -81,6 +81,40 @@ function groupByDay(sessions: BPSession[]): { dayLabel: string; items: BPSession
   return Array.from(map.entries()).map(([dayLabel, items]) => ({ dayLabel, items }));
 }
 
+// ─── Control status (ESC/ESH 2023 HBPM) ──────────────────────────────────────
+// "Controlled" home BP: mean systolic <135 AND diastolic <85 over ≥3 unique days
+// in the last 7 calendar days (minimum evidence threshold before ESH considers
+// the assessment valid; ideally ≥7 days but 3 is the practical minimum).
+
+type ControlStatus =
+  | { status: 'controlled';   avgSys: number; avgDia: number; days: number; sessionCount: number }
+  | { status: 'uncontrolled'; avgSys: number; avgDia: number; days: number; sessionCount: number }
+  | { status: 'insufficient'; days: number; sessionCount: number };
+
+function computeControlStatus(sessions: BPSession[]): ControlStatus {
+  const cutoff7d = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recent   = sessions.filter((s) => s.timestamp >= cutoff7d);
+
+  const daySet = new Set(
+    recent.map((s) => {
+      const d = new Date(s.timestamp);
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    }),
+  );
+  const days         = daySet.size;
+  const sessionCount = recent.length;
+
+  if (days < 3) return { status: 'insufficient', days, sessionCount };
+
+  const avgSys = Math.round(recent.reduce((sum, s) => sum + s.systolic,  0) / recent.length);
+  const avgDia = Math.round(recent.reduce((sum, s) => sum + s.diastolic, 0) / recent.length);
+
+  return {
+    status: avgSys < 135 && avgDia < 85 ? 'controlled' : 'uncontrolled',
+    avgSys, avgDia, days, sessionCount,
+  };
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 const LatestSessionCard: React.FC<{ session: BPSession }> = ({ session }) => {
@@ -347,6 +381,77 @@ const CrisisBanner: React.FC<{ systolic: number; diastolic: number; onDismiss: (
   </motion.div>
 );
 
+const ControlBadge: React.FC<{ status: ControlStatus }> = ({ status }) => {
+  const insufficient = status.status === 'insufficient';
+  const controlled   = status.status === 'controlled';
+
+  if (insufficient) {
+    return (
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/40 px-4 py-3.5 flex items-center gap-4">
+        {/* Icon */}
+        <div className="w-9 h-9 rounded-full bg-slate-700/80 flex items-center justify-center flex-shrink-0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2.5} strokeLinecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pressione controllata · HBPM</p>
+          <p className="text-sm font-bold text-slate-400 mt-0.5">Dati insufficienti</p>
+          <p className="text-xs text-slate-600 mt-0.5 leading-snug">
+            {status.days}/7 giorni · {status.sessionCount} sessioni negli ultimi 7 giorni
+            {' '}— servono almeno 3 giorni di misurazioni
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-2xl border px-4 py-3.5 flex items-center gap-4 ${
+        controlled
+          ? 'bg-emerald-500/10 border-emerald-500/35'
+          : 'bg-rose-500/10 border-rose-500/35'
+      }`}
+    >
+      {/* Icon */}
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+        controlled ? 'bg-emerald-500/20' : 'bg-rose-500/20'
+      }`}>
+        {controlled ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth={2.5} strokeLinecap="round" aria-hidden="true">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" strokeWidth={2.5} strokeLinecap="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="13" /><circle cx="12" cy="17" r="1" fill="#f43f5e" stroke="none" />
+          </svg>
+        )}
+      </div>
+
+      {/* Text */}
+      <div className="flex-1 min-w-0">
+        <p className={`text-xs font-semibold uppercase tracking-wider ${
+          controlled ? 'text-emerald-500' : 'text-rose-500'
+        }`}>
+          Pressione controllata · HBPM ESC/ESH 2023
+        </p>
+        <p className={`text-base font-black mt-0.5 tracking-tight ${
+          controlled ? 'text-emerald-300' : 'text-rose-300'
+        }`}>
+          {controlled ? 'CONTROLLATA' : 'NON CONTROLLATA'}
+        </p>
+        <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+          {'avgSys' in status && `Media ${status.avgSys}/${status.avgDia} mmHg · `}
+          {status.days}/7 giorni · {status.sessionCount} sessioni · soglia HBPM: &lt;135/&lt;85
+        </p>
+      </div>
+    </motion.div>
+  );
+};
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 const Dashboard: React.FC = () => {
@@ -370,6 +475,7 @@ const Dashboard: React.FC = () => {
   const [isLoadingDemo, setLoadingDemo]       = useState(false);
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const [crisisDismissed, setCrisisDismissed] = useState(false);
+  const [historyOpen, setHistoryOpen]         = useState(true);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
 
@@ -409,6 +515,10 @@ const Dashboard: React.FC = () => {
     latest != null &&
     isHypertensiveCrisis(latest.systolic, latest.diastolic) &&
     Date.now() - latest.timestamp < CRISIS_WINDOW_MS;
+
+  // Control status — always computed from ALL sessions in the last 7 days,
+  // independent of the current period filter
+  const controlStatus = useMemo(() => computeControlStatus(sessions), [sessions]);
 
   // StatsCard needs BPMeasurement-like objects; adapt from sessions
   const statsInput = useMemo(
@@ -587,6 +697,9 @@ const Dashboard: React.FC = () => {
           )}
         </AnimatePresence>
 
+        {/* Control status badge — always uses last 7 days, independent of period filter */}
+        {sessions.length > 0 && <ControlBadge status={controlStatus} />}
+
         {/* Period filter */}
         <div className="flex bg-slate-800/60 border border-slate-700 rounded-2xl p-1 gap-1" role="tablist" aria-label="Filtra per periodo">
           {PERIODS.map(({ key, label }) => (
@@ -629,37 +742,72 @@ const Dashboard: React.FC = () => {
           </motion.div>
         )}
 
-        {/* Stats card */}
-        {filteredSessions.length >= 2 && (
-          <StatsCard measurements={statsInput as never} periodLabel={PERIOD_LABELS[period]} />
+        {/* Stats + Chart: side by side on sm+ screens, stacked on mobile */}
+        {filteredSessions.length >= 2 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <StatsCard measurements={statsInput as never} periodLabel={PERIOD_LABELS[period]} />
+            <InsightChart data={filteredChartData} period={period} />
+          </div>
+        ) : (
+          <InsightChart data={filteredChartData} period={period} />
         )}
 
-        {/* Chart */}
-        <InsightChart data={filteredChartData} period={period} />
-
-        {/* History grouped by day */}
+        {/* History grouped by day — collapsible */}
         {grouped.length > 0 && (
           <section className="bg-slate-800/50 rounded-2xl border border-slate-700" aria-labelledby="history-heading">
             <div className="flex items-center justify-between px-5 pt-5 pb-3">
               <h2 id="history-heading" className="text-base font-bold text-white">Storico sessioni</h2>
-              <span className="text-xs text-slate-500">{filteredSessions.length} sessioni</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500">{filteredSessions.length} sessioni</span>
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen((v) => !v)}
+                  aria-expanded={historyOpen}
+                  aria-controls="history-list"
+                  aria-label={historyOpen ? 'Comprimi storico' : 'Espandi storico'}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500"
+                >
+                  <motion.svg
+                    width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth={2} strokeLinecap="round"
+                    animate={{ rotate: historyOpen ? 0 : 180 }}
+                    transition={{ duration: 0.2 }}
+                    aria-hidden="true"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </motion.svg>
+                </button>
+              </div>
             </div>
-            <div className="px-5 pb-4 flex flex-col gap-4">
-              {grouped.map(({ dayLabel, items }) => (
-                <div key={dayLabel}>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 capitalize">
-                    {dayLabel}
-                  </p>
-                  <ul role="list">
-                    <AnimatePresence initial={false}>
-                      {items.map((s) => (
-                        <SessionItem key={s.sessionId} session={s} onDelete={handleDelete} />
-                      ))}
-                    </AnimatePresence>
-                  </ul>
-                </div>
-              ))}
-            </div>
+            <AnimatePresence initial={false}>
+              {historyOpen && (
+                <motion.div
+                  id="history-list"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-5 pb-4 flex flex-col gap-4">
+                    {grouped.map(({ dayLabel, items }) => (
+                      <div key={dayLabel}>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 capitalize">
+                          {dayLabel}
+                        </p>
+                        <ul role="list">
+                          <AnimatePresence initial={false}>
+                            {items.map((s) => (
+                              <SessionItem key={s.sessionId} session={s} onDelete={handleDelete} />
+                            ))}
+                          </AnimatePresence>
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </section>
         )}
 
