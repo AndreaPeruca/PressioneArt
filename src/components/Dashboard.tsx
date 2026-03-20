@@ -560,7 +560,7 @@ const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-slate-900 text-white">
       {/* App Bar */}
       <header className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-sm border-b border-slate-800 px-4 py-3">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
+        <div className="max-w-lg sm:max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="text-2xl" aria-hidden="true">❤️</span>
             <span className="font-black text-lg tracking-tight">Pressione</span>
@@ -649,7 +649,7 @@ const Dashboard: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-5 flex flex-col gap-5">
+      <main className="max-w-lg sm:max-w-2xl mx-auto px-4 py-5 flex flex-col gap-5">
 
         <AnimatePresence>
           {error && <ErrorBanner message={error} onDismiss={clearError} />}
