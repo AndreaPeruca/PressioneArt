@@ -96,6 +96,8 @@ export interface ImportRow {
   heartRate: number;
   tags: MeasurementTag[];
   note?: string;
+  device?: MeasurementDevice;
+  hasIrregularHeartbeat?: boolean;
 }
 
 export interface ParseResult {
