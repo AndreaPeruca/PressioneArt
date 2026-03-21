@@ -10,6 +10,9 @@ export type MeasurementTag =
 /** Which arm was used for the measurement */
 export type MeasurementArm = 'left' | 'right' | 'unknown';
 
+/** Type of blood pressure monitor (upper-arm vs wrist) */
+export type MeasurementDevice = 'arm' | 'wrist';
+
 /** ESC/ESH 2023 blood-pressure classification */
 export type BPCategory =
   | 'optimal'       // < 120/80
@@ -42,6 +45,7 @@ export interface BPMeasurement {
   note?: string;
   category: BPCategory;
   arm?: MeasurementArm;
+  device?: MeasurementDevice;
   hasIrregularHeartbeat?: boolean;
   // ── Session fields (optional) ─────────────────────────────────────────
   sessionId?: string;
@@ -64,6 +68,7 @@ export interface BPSession {
   tags: MeasurementTag[];
   note?: string;
   readingCount: number;    // number of official (non-warmup) readings
+  device?: MeasurementDevice;
   warmupReading?: BPMeasurement;
   officialReadings: BPMeasurement[];
 }
@@ -123,6 +128,7 @@ export interface SessionPayload {
   tags: MeasurementTag[];
   note?: string;
   arm?: MeasurementArm;
+  device?: MeasurementDevice;
   hasIrregularHeartbeat?: boolean;
   /** All readings in order: index 0 = warmup, 1–2 = official */
   readings: Array<{

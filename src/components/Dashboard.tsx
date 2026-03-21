@@ -143,6 +143,11 @@ const LatestSessionCard: React.FC<{ session: BPSession }> = ({ session }) => {
               ×{session.readingCount} letture
             </span>
           )}
+          {session.device === 'wrist' && (
+            <span className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
+              Polso
+            </span>
+          )}
           <span
             className="text-xs font-bold px-2.5 py-1 rounded-full"
             style={{ color: meta.color, backgroundColor: `${meta.color}20` }}
@@ -207,6 +212,9 @@ const SessionItem: React.FC<{
             <span className="text-slate-400 font-normal text-xs ml-2">{session.heartRate} bpm</span>
             {hasMultiple && (
               <span className="text-slate-600 font-normal text-xs ml-2">media ×{session.readingCount}</span>
+            )}
+            {session.device === 'wrist' && (
+              <span className="text-amber-500 font-normal text-xs ml-2">· polso</span>
             )}
           </p>
           {session.tags.length > 0 && (

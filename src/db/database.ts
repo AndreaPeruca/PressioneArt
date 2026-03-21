@@ -15,6 +15,7 @@ import type {
   BPMeasurement,
   BPSession,
   EncryptedRecord,
+  MeasurementDevice,
   SessionPayload,
 } from '../types';
 
@@ -131,6 +132,7 @@ function deriveSessions(measurements: BPMeasurement[]): BPSession[] {
       category:        classifyBP(sys, dia),
       tags:            readings[0].tags,
       note:            readings[0].note,
+      device:          readings[0].device,
       readingCount:    officialReadings.length,
       warmupReading:   warmup,
       officialReadings,
@@ -207,6 +209,7 @@ class PressureDatabase extends Dexie implements IPressureDB {
           note:                   payload.note,
           category:               classifyBP(r.systolic, r.diastolic),
           arm:                    payload.arm,
+          device:                 payload.device,
           hasIrregularHeartbeat:  payload.hasIrregularHeartbeat,
           sessionId:              payload.sessionId,
           readingIndex:           r.readingIndex,

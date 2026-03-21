@@ -28,6 +28,7 @@ import CountdownTimer from './CountdownTimer';
 import type {
   FormFieldError,
   MeasurementArm,
+  MeasurementDevice,
   MeasurementTag,
   RawReading,
   SessionFormProps,
@@ -284,7 +285,8 @@ const ReadingPanel: React.FC<ReadingPanelProps> = ({
 interface SummaryProps {
   readings: RawReading[];
   tags: MeasurementTag[];
-  arm: import('../types').MeasurementArm;
+  arm: MeasurementArm;
+  device: MeasurementDevice;
   hasIrregularHeartbeat: boolean;
   onToggleTag: (tag: MeasurementTag) => void;
   isSaving: boolean;
@@ -296,14 +298,15 @@ function avg(values: number[]): number {
   return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
-const ARM_LABELS: Record<import('../types').MeasurementArm, string> = {
-  left:    'Braccio sinistro',
-  right:   'Braccio destro',
-  unknown: 'Braccio non specificato',
-};
+function armDeviceLabel(arm: MeasurementArm, device?: MeasurementDevice): string {
+  const part = device === 'wrist' ? 'Polso' : 'Braccio';
+  if (arm === 'left')  return `${part} sinistro`;
+  if (arm === 'right') return `${part} destro`;
+  return `${part} (lato non spec.)`;
+}
 
 const Summary: React.FC<SummaryProps> = ({
-  readings, tags, arm, hasIrregularHeartbeat, onToggleTag, isSaving, onSave, onRedo,
+  readings, tags, arm, device, hasIrregularHeartbeat, onToggleTag, isSaving, onSave, onRedo,
 }) => {
   const official = readings.slice(1);
   const meanSys  = avg(official.map((r) => Number(r.systolic)));
@@ -378,7 +381,7 @@ const Summary: React.FC<SummaryProps> = ({
       {/* Session metadata */}
       <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 flex flex-col gap-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-400">{ARM_LABELS[arm]}</span>
+          <span className="text-slate-400">{armDeviceLabel(arm, device)}</span>
           {hasIrregularHeartbeat && (
             <span className="text-amber-400 font-semibold">⚠ Battito irregolare</span>
           )}
@@ -465,6 +468,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
   const [tags, setTags]             = useState<MeasurementTag[]>([]);
   const [note, setNote]             = useState('');
   const [arm, setArm]               = useState<MeasurementArm>('unknown');
+  const [device, setDevice]         = useState<MeasurementDevice>('arm');
   const [hasIrregularHeartbeat, setHasIrregularHeartbeat] = useState(false);
   const [readings, setReadings] = useState<RawReading[]>([
     { ...EMPTY_READING },
@@ -528,6 +532,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
         tags,
         note: note.trim() || undefined,
         arm,
+        device,
         hasIrregularHeartbeat: hasIrregularHeartbeat || undefined,
         readings: readings.map((r, i) => ({
           timestamp:    timestamps[i] ?? Date.now(),
@@ -544,6 +549,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
       setTags([]);
       setNote('');
       setArm('unknown');
+      setDevice('arm');
       setHasIrregularHeartbeat(false);
       setReadings([EMPTY_READING, EMPTY_READING, EMPTY_READING].map((r) => ({ ...r })));
       setTimestamps([]);
@@ -555,6 +561,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
   const handleRedo = useCallback(() => {
     setStep('breathing');
     setArm('unknown');
+    setDevice('arm');
     setHasIrregularHeartbeat(false);
     setReadings([EMPTY_READING, EMPTY_READING, EMPTY_READING].map((r) => ({ ...r })));
     setTimestamps([]);
@@ -604,9 +611,50 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
               La prima (riscaldamento) verrà scartata automaticamente. Seleziona il contesto prima di iniziare.
             </p>
 
-            {/* Arm selector */}
+            {/* Device type selector */}
             <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Braccio utilizzato</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Tipo di misuratore</p>
+              <div className="flex gap-2" role="group" aria-label="Tipo misuratore">
+                {([
+                  { value: 'arm'   as MeasurementDevice, label: 'Braccio' },
+                  { value: 'wrist' as MeasurementDevice, label: 'Polso'   },
+                ]).map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setDevice(value)}
+                    aria-pressed={device === value}
+                    className={[
+                      'flex-1 py-2 rounded-xl text-sm font-medium border transition-all duration-200 focus:outline-none',
+                      device === value
+                        ? value === 'wrist'
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                          : 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                        : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-slate-400',
+                    ].join(' ')}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {device === 'wrist' && (
+                <div className="flex items-start gap-2 mt-2 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" className="flex-shrink-0 mt-0.5" aria-hidden="true">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <p className="text-xs text-amber-300 leading-relaxed">
+                    I misuratori da polso sono meno accurati (posizione del polso, rigidità arteriosa). Le linee guida ESC/ESH 2023 raccomandano i misuratori da braccio per il monitoraggio domiciliare.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Arm/wrist side selector */}
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                {device === 'wrist' ? 'Polso utilizzato' : 'Braccio utilizzato'}
+              </p>
               <div className="flex gap-2" role="group" aria-label="Braccio misurazione">
                 {ARM_OPTIONS.map(({ value, label }) => (
                   <button
@@ -790,6 +838,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
               readings={readings}
               tags={tags}
               arm={arm}
+              device={device}
               hasIrregularHeartbeat={hasIrregularHeartbeat}
               onToggleTag={toggleTag}
               isSaving={isSaving}

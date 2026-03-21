@@ -279,6 +279,85 @@ const s = StyleSheet.create({
     marginTop: 1,
   },
 
+  // ── Clinical interpretation box ──
+  clinicalBox: {
+    borderRadius:   6,
+    borderWidth:    1.5,
+    padding:        '10 14',
+    marginBottom:   12,
+    flexDirection:  'row',
+    alignItems:     'center',
+    gap:            16,
+  },
+  clinicalStatus: {
+    fontSize:   15,
+    fontFamily: 'Helvetica-Bold',
+    letterSpacing: -0.3,
+  },
+  clinicalLabel: {
+    fontSize:   7,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom:  2,
+  },
+  clinicalSub: {
+    fontSize: 7.5,
+    color:    C.slate500,
+    marginTop: 2,
+  },
+  clinicalMetaRow: {
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 6,
+  },
+  clinicalMetaItem: {
+    flexDirection: 'column',
+  },
+  clinicalMetaLabel: {
+    fontSize: 6.5,
+    color:    C.slate500,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  clinicalMetaValue: {
+    fontSize:   9,
+    fontFamily: 'Helvetica-Bold',
+    color:      C.slate700,
+    marginTop:  1,
+  },
+
+  // ── Advanced metrics table ──
+  advRow: {
+    flexDirection:  'row',
+    gap:            6,
+    marginBottom:   6,
+  },
+  advCell: {
+    flex:            1,
+    backgroundColor: C.slate50,
+    borderRadius:    5,
+    borderColor:     C.slate200,
+    borderWidth:     1,
+    padding:         '6 8',
+  },
+  advCellLabel: {
+    fontSize:  6.5,
+    color:     C.slate500,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  advCellValue: {
+    fontSize:   11,
+    fontFamily: 'Helvetica-Bold',
+    color:      C.slate700,
+    marginTop:  2,
+  },
+  advCellSub: {
+    fontSize: 6.5,
+    color:    C.slate500,
+    marginTop: 1,
+  },
+
   // ── Footer ──
   footer: {
     position:   'absolute',
@@ -311,10 +390,35 @@ function avg(arr: number[]): number {
 function minOf(arr: number[]): number { return arr.length ? Math.min(...arr) : 0; }
 function maxOf(arr: number[]): number { return arr.length ? Math.max(...arr) : 0; }
 
+/** Sample standard deviation, rounded to 1 decimal */
+function stdDev(arr: number[]): number {
+  if (arr.length < 2) return 0;
+  const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+  const variance = arr.reduce((s, x) => s + (x - mean) ** 2, 0) / (arr.length - 1);
+  return Math.round(Math.sqrt(variance) * 10) / 10;
+}
+
+/** Unique calendar-day strings for a set of sessions */
+function uniqueDaySet(ss: BPSession[]): Set<string> {
+  return new Set(ss.map(s => {
+    const d = new Date(s.timestamp);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }));
+}
+
 interface Stats {
-  avgSys: number; minSys: number; maxSys: number;
-  avgDia: number; minDia: number; maxDia: number;
+  avgSys: number; minSys: number; maxSys: number; sdSys: number;
+  avgDia: number; minDia: number; maxDia: number; sdDia: number;
   avgHR:  number;
+  pulsePressure: number;   // avgSys − avgDia
+  map: number;             // avgDia + PP/3
+  bpLoad: number;          // % sessions above 135/85 (either)
+  morningSurge: number | null;  // morning avg sys − evening avg sys
+  morningDays: number;     // unique days with 6–10h session
+  eveningDays: number;     // unique days with 18–23h session
+  totalDays: number;       // unique calendar days total
+  arrhythmiaCount: number; // sessions with irregular heartbeat flag
+  crisisCount: number;     // sessions with sys>=180 || dia>=120
   dominant: BPCategory;
   catCounts: Record<BPCategory, number>;
 }
@@ -326,19 +430,50 @@ function computeStats(sessions: BPSession[]): Stats {
     optimal: 0, normal: 0, 'high-normal': 0, grade1: 0, grade2: 0, grade3: 0,
   };
   for (const s of sessions) cats[s.category]++;
-  const avgSys = avg(sessions.map(s => s.systolic));
-  const avgDia = avg(sessions.map(s => s.diastolic));
-  // ESC/ESH classifies the patient on their overall mean, not the most frequent category
-  const dominant = classifyBP(avgSys, avgDia);
+
+  const sysList = sessions.map(s => s.systolic);
+  const diaList = sessions.map(s => s.diastolic);
+  const avgSys  = avg(sysList);
+  const avgDia  = avg(diaList);
+  const pp      = avgSys - avgDia;
+
+  const morningS = sessions.filter(s => { const h = new Date(s.timestamp).getHours(); return h >= 6 && h < 10; });
+  const eveningS = sessions.filter(s => { const h = new Date(s.timestamp).getHours(); return h >= 18 && h < 23; });
+  const morningSurge = morningS.length >= 1 && eveningS.length >= 1
+    ? avg(morningS.map(s => s.systolic)) - avg(eveningS.map(s => s.systolic))
+    : null;
+
+  const arrhythmiaCount = sessions.filter(s =>
+    s.officialReadings.some(r => r.hasIrregularHeartbeat) ||
+    s.warmupReading?.hasIrregularHeartbeat,
+  ).length;
+
+  const crisisCount = sessions.filter(s => s.systolic >= 180 || s.diastolic >= 120).length;
+
+  // BP Load: % of sessions exceeding the HBPM threshold (135 sys OR 85 dia)
+  const aboveThreshold = sessions.filter(s => s.systolic >= 135 || s.diastolic >= 85).length;
+  const bpLoad = sessions.length ? Math.round((aboveThreshold / sessions.length) * 100) : 0;
+
   return {
     avgSys,
-    minSys:   minOf(sessions.map(s => s.systolic)),
-    maxSys:   maxOf(sessions.map(s => s.systolic)),
+    minSys:   minOf(sysList),
+    maxSys:   maxOf(sysList),
+    sdSys:    stdDev(sysList),
     avgDia,
-    minDia:   minOf(sessions.map(s => s.diastolic)),
-    maxDia:   maxOf(sessions.map(s => s.diastolic)),
+    minDia:   minOf(diaList),
+    maxDia:   maxOf(diaList),
+    sdDia:    stdDev(diaList),
     avgHR:    avg(sessions.map(s => s.heartRate)),
-    dominant,
+    pulsePressure: pp,
+    map:      Math.round(avgDia + pp / 3),
+    bpLoad,
+    morningSurge,
+    morningDays: uniqueDaySet(morningS).size,
+    eveningDays: uniqueDaySet(eveningS).size,
+    totalDays:   uniqueDaySet(sessions).size,
+    arrhythmiaCount,
+    crisisCount,
+    dominant:  classifyBP(avgSys, avgDia),
     catCounts: cats,
   };
 }
@@ -636,6 +771,58 @@ const ReportDocument: React.FC<ReportOptions> = ({
 
         <View style={s.body}>
 
+          {/* ── Clinical interpretation box ── */}
+          {(() => {
+            const isInsufficient = stats.totalDays < 3;
+            const isControlled   = !isInsufficient && stats.avgSys < 135 && stats.avgDia < 85;
+            const boxColor = isInsufficient ? C.slate400 : isControlled ? C.accentGreen : C.rose;
+            const statusText = isInsufficient
+              ? 'DATI INSUFFICIENTI'
+              : isControlled ? 'PRESSIONE CONTROLLATA' : 'PRESSIONE NON CONTROLLATA';
+            const alerts = [];
+            if (stats.crisisCount > 0)     alerts.push(`${stats.crisisCount} episod${stats.crisisCount === 1 ? 'io' : 'i'} crisi ipertensiva (>=180/120)`);
+            if (stats.arrhythmiaCount > 0) alerts.push(`${stats.arrhythmiaCount} sessioni con battito irregolare`);
+            return (
+              <View style={[s.clinicalBox, { borderColor: boxColor, backgroundColor: `${boxColor}0F` }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.clinicalLabel, { color: boxColor }]}>
+                    Sintesi clinica HBPM ESC/ESH 2023
+                  </Text>
+                  <Text style={[s.clinicalStatus, { color: boxColor }]}>{statusText}</Text>
+                  {isInsufficient
+                    ? <Text style={s.clinicalSub}>Solo {stats.totalDays} giorni di dati — servono almeno 3 per una valutazione (ideale: 7)</Text>
+                    : <Text style={s.clinicalSub}>
+                        Media {stats.avgSys}/{stats.avgDia} mmHg (soglia HBPM: 135/85) · {stats.totalDays} giorni · {sessions.length} sessioni
+                      </Text>
+                  }
+                  {alerts.length > 0 && (
+                    <Text style={[s.clinicalSub, { color: C.amber, marginTop: 3 }]}>
+                      Attenzione: {alerts.join(' — ')}
+                    </Text>
+                  )}
+                </View>
+                <View style={s.clinicalMetaRow}>
+                  <View style={s.clinicalMetaItem}>
+                    <Text style={s.clinicalMetaLabel}>BP Load</Text>
+                    <Text style={[s.clinicalMetaValue, { color: stats.bpLoad > 25 ? C.rose : C.accentGreen }]}>
+                      {stats.bpLoad}%
+                    </Text>
+                  </View>
+                  <View style={s.clinicalMetaItem}>
+                    <Text style={s.clinicalMetaLabel}>Giorni</Text>
+                    <Text style={s.clinicalMetaValue}>{stats.totalDays}</Text>
+                  </View>
+                  <View style={s.clinicalMetaItem}>
+                    <Text style={s.clinicalMetaLabel}>SD Sys</Text>
+                    <Text style={[s.clinicalMetaValue, { color: stats.sdSys > 10 ? C.amber : C.slate700 }]}>
+                      {stats.sdSys}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })()}
+
           {/* Key metrics */}
           <View style={s.metricsRow}>
             <View style={s.metricCard}>
@@ -654,9 +841,9 @@ const ReportDocument: React.FC<ReportOptions> = ({
               <Text style={s.metricLabel}>Frequenza cardiaca media</Text>
             </View>
             <View style={s.metricCard}>
-              <Text style={[s.metricValue, { color: domColor }]}>{sessions.length}</Text>
-              <Text style={s.metricSub}>sessioni</Text>
-              <Text style={s.metricLabel}>Misurazioni totali</Text>
+              <Text style={[s.metricValue, { color: stats.bpLoad > 25 ? C.rose : C.accentGreen }]}>{stats.bpLoad}%</Text>
+              <Text style={s.metricSub}>letture oltre 135/85</Text>
+              <Text style={s.metricLabel}>BP Load (soglia HBPM)</Text>
             </View>
           </View>
 
@@ -713,6 +900,92 @@ const ReportDocument: React.FC<ReportOptions> = ({
         </View>
 
         <View style={s.body}>
+
+          {/* ── Advanced clinical metrics ── */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Metriche cliniche avanzate</Text>
+            <View style={s.advRow}>
+              <View style={s.advCell}>
+                <Text style={s.advCellLabel}>BP Load sistolica</Text>
+                <Text style={[s.advCellValue, { color: stats.bpLoad > 25 ? C.rose : C.accentGreen }]}>
+                  {stats.bpLoad}%
+                </Text>
+                <Text style={s.advCellSub}>sessioni sopra 135 mmHg — normale: &lt;25%</Text>
+              </View>
+              <View style={s.advCell}>
+                <Text style={s.advCellLabel}>Variabilita sistolica (SD)</Text>
+                <Text style={[s.advCellValue, { color: stats.sdSys > 10 ? C.amber : C.slate700 }]}>
+                  {stats.sdSys} mmHg
+                </Text>
+                <Text style={s.advCellSub}>fattore di rischio CV indipendente se &gt;10</Text>
+              </View>
+              <View style={s.advCell}>
+                <Text style={s.advCellLabel}>Variabilita diastolica (SD)</Text>
+                <Text style={[s.advCellValue, { color: stats.sdDia > 8 ? C.amber : C.slate700 }]}>
+                  {stats.sdDia} mmHg
+                </Text>
+                <Text style={s.advCellSub}>normale: &lt;8 mmHg</Text>
+              </View>
+            </View>
+            <View style={s.advRow}>
+              <View style={s.advCell}>
+                <Text style={s.advCellLabel}>Pressione differenziale (PP)</Text>
+                <Text style={[s.advCellValue, { color: stats.pulsePressure > 60 ? C.amber : C.slate700 }]}>
+                  {stats.pulsePressure} mmHg
+                </Text>
+                <Text style={s.advCellSub}>marker rigidita arteriosa se &gt;60</Text>
+              </View>
+              <View style={s.advCell}>
+                <Text style={s.advCellLabel}>Pressione arteriosa media (PAM)</Text>
+                <Text style={s.advCellValue}>{stats.map} mmHg</Text>
+                <Text style={s.advCellSub}>perfusione organi — normale: &lt;100</Text>
+              </View>
+              <View style={s.advCell}>
+                <Text style={s.advCellLabel}>Surge mattutino</Text>
+                <Text style={[s.advCellValue, { color: stats.morningSurge !== null && stats.morningSurge > 15 ? C.amber : C.slate700 }]}>
+                  {stats.morningSurge !== null ? `${stats.morningSurge > 0 ? '+' : ''}${stats.morningSurge} mmHg` : 'N/D'}
+                </Text>
+                <Text style={s.advCellSub}>mattina vs sera — rischio eventi se &gt;15</Text>
+              </View>
+            </View>
+            <View style={s.advRow}>
+              <View style={s.advCell}>
+                <Text style={s.advCellLabel}>Aderenza protocollo mattina</Text>
+                <Text style={[s.advCellValue, { color: stats.morningDays >= 7 ? C.accentGreen : stats.morningDays >= 3 ? C.amber : C.rose }]}>
+                  {stats.morningDays} giorni
+                </Text>
+                <Text style={s.advCellSub}>sessioni 06:00–10:00 — ideale: 7</Text>
+              </View>
+              <View style={s.advCell}>
+                <Text style={s.advCellLabel}>Aderenza protocollo sera</Text>
+                <Text style={[s.advCellValue, { color: stats.eveningDays >= 7 ? C.accentGreen : stats.eveningDays >= 3 ? C.amber : C.rose }]}>
+                  {stats.eveningDays} giorni
+                </Text>
+                <Text style={s.advCellSub}>sessioni 18:00–23:00 — ideale: 7</Text>
+              </View>
+              {(stats.arrhythmiaCount > 0 || stats.crisisCount > 0) ? (
+                <View style={[s.advCell, { borderColor: C.amber, backgroundColor: `${C.amber}10` }]}>
+                  <Text style={[s.advCellLabel, { color: C.amber }]}>Segnalazioni</Text>
+                  {stats.crisisCount > 0 && (
+                    <Text style={[s.advCellValue, { fontSize: 8, color: C.rose }]}>
+                      {stats.crisisCount} crisi ipertensiv{stats.crisisCount === 1 ? 'a' : 'e'}
+                    </Text>
+                  )}
+                  {stats.arrhythmiaCount > 0 && (
+                    <Text style={[s.advCellValue, { fontSize: 8, color: C.amber }]}>
+                      {stats.arrhythmiaCount} battiti irregolari
+                    </Text>
+                  )}
+                </View>
+              ) : (
+                <View style={s.advCell}>
+                  <Text style={s.advCellLabel}>Segnalazioni</Text>
+                  <Text style={[s.advCellValue, { color: C.accentGreen, fontSize: 9 }]}>Nessuna</Text>
+                  <Text style={s.advCellSub}>nessuna crisi o aritmia rilevata</Text>
+                </View>
+              )}
+            </View>
+          </View>
 
           {/* Morning vs Evening */}
           {(morning.length > 0 || evening.length > 0) && (
@@ -802,9 +1075,10 @@ const ReportDocument: React.FC<ReportOptions> = ({
                 const dt = new Date(s2.timestamp);
                 const dateStr = dt.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })
                   + ' ' + dt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-                const tagStr = s2.tags.length > 3
-                  ? s2.tags.slice(0, 3).join(', ') + ` +${s2.tags.length - 3}`
-                  : s2.tags.join(', ');
+                const tagParts = s2.device === 'wrist' ? ['polso', ...s2.tags] : [...s2.tags];
+                const tagStr = tagParts.length > 3
+                  ? tagParts.slice(0, 3).join(', ') + ` +${tagParts.length - 3}`
+                  : tagParts.join(', ');
                 const isMulti = s2.readingCount >= 2 && !!s2.warmupReading;
                 return (
                   <View key={s2.sessionId} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
