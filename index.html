@@ -19,10 +19,14 @@
       Key choices:
         script-src 'self' blob:   – no inline scripts; blob: needed for
                                     @react-pdf/renderer Web Worker
+                                  – https://va.vercel-scripts.com for Vercel
+                                    Web Analytics
         style-src  'self' 'unsafe-inline' – Tailwind injects a style block
                                     in both dev and production builds
         img-src    data: blob:    – avatars / chart images may be data URIs
         font-src   data:          – react-pdf embeds fonts as data URIs
+        connect-src 'self'        – https://va.vercel-scripts.com for Vercel
+                                    Web Analytics telemetry
         worker-src blob:          – react-pdf PDF generation worker
         frame-ancestors 'none'   – blocks clickjacking via <iframe> embed
         object-src 'none'         – disables Flash / Java plugins
@@ -32,11 +36,11 @@
       http-equiv="Content-Security-Policy"
       content="
         default-src 'self';
-        script-src  'self' blob: 'wasm-unsafe-eval' 'unsafe-eval';
+        script-src  'self' blob: 'wasm-unsafe-eval' 'unsafe-eval' https://va.vercel-scripts.com;
         style-src   'self' 'unsafe-inline';
         img-src     'self' data: blob:;
         font-src    'self' data:;
-        connect-src 'self';
+        connect-src 'self' https://va.vercel-scripts.com;
         worker-src  'self' blob:;
         object-src  'none';
         frame-ancestors 'none';
