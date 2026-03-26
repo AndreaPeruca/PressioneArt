@@ -15,7 +15,7 @@ import type {
   BPMeasurement,
   BPSession,
   EncryptedRecord,
-  MeasurementDevice,
+  MeasurementTag,
   SessionPayload,
 } from '../types';
 
@@ -158,6 +158,12 @@ export interface IPressureDB {
   /** Wipe everything. */
   clearAllMeasurements(): Promise<void>;
 
+  /** Update contextual metadata (tags, note, device) for all measurements in a session. */
+  updateSessionMeta(
+    sessionId: string,
+    meta: { tags: MeasurementTag[]; note?: string; device?: BPMeasurement['device'] },
+  ): Promise<void>;
+
   /** Bulk import (CSV / demo data) — each row becomes a solo session.
    *  Skips rows whose timestamp is within ±1 minute of an existing record. */
   addManyMeasurements(rows: Omit<BPMeasurement, 'id' | 'category'>[]): Promise<{ inserted: number; skipped: number }>;
@@ -170,7 +176,7 @@ class PressureDatabase extends Dexie implements IPressureDB {
   public encryptedRecords!: Table<EncryptedRecord, number>;
 
   constructor() {
-    super('PressioneDB');
+    super('FlowDB');
 
     /** v1 – initial schema */
     this.version(1).stores({
@@ -242,6 +248,20 @@ class PressureDatabase extends Dexie implements IPressureDB {
 
   async clearAllMeasurements(): Promise<void> {
     await this.measurements.clear();
+  }
+
+  async updateSessionMeta(
+    sessionId: string,
+    meta: { tags: MeasurementTag[]; note?: string; device?: BPMeasurement['device'] },
+  ): Promise<void> {
+    const update = { tags: meta.tags, note: meta.note, device: meta.device };
+    if (sessionId.startsWith('solo-')) {
+      const rawId  = sessionId.replace('solo-', '');
+      const numeric = Number(rawId);
+      if (!isNaN(numeric)) await this.measurements.update(numeric, update);
+    } else {
+      await this.measurements.where('sessionId').equals(sessionId).modify(update);
+    }
   }
 
   async addManyMeasurements(

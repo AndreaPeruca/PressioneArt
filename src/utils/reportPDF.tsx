@@ -82,7 +82,7 @@ const s = StyleSheet.create({
   page: {
     fontFamily:      'Helvetica',
     backgroundColor: C.white,
-    paddingBottom:   48,
+    paddingBottom:   62,
   },
 
   // ── Header ──
@@ -358,18 +358,40 @@ const s = StyleSheet.create({
     marginTop: 1,
   },
 
+  // ── Wrist device warning ──
+  wristWarning: {
+    backgroundColor: `${C.amber}20`,
+    borderColor:     C.amber,
+    borderWidth:     1,
+    borderRadius:    4,
+    padding:         '5 10',
+    marginBottom:    10,
+    flexDirection:   'row' as const,
+    alignItems:      'center' as const,
+    gap:             6,
+  },
+  wristWarningText: {
+    fontSize: 7,
+    color:    C.amber,
+    flex:     1,
+  },
+
   // ── Footer ──
   footer: {
     position:   'absolute',
     bottom:     0,
     left:       0,
     right:      0,
-    padding:    '8 28',
+    padding:    '6 28',
     borderTopColor: C.slate200,
     borderTopWidth: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
+  },
+  footerRow: {
+    flexDirection:  'row',
     justifyContent: 'space-between',
-    alignItems:    'center',
+    alignItems:     'flex-start',
+    marginTop:      3,
   },
   footerText: {
     fontSize: 6.5,
@@ -379,6 +401,10 @@ const s = StyleSheet.create({
     fontSize:   6.5,
     fontFamily: 'Helvetica-Bold',
     color:      C.slate500,
+  },
+  footerDisclaimer: {
+    fontSize: 6,
+    color:    C.slate500,
   },
 });
 
@@ -406,6 +432,43 @@ function uniqueDaySet(ss: BPSession[]): Set<string> {
   }));
 }
 
+/** Linear regression — returns slope (ys per xs unit) */
+function linearRegression(xs: number[], ys: number[]): number {
+  const n = xs.length;
+  if (n < 2) return 0;
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+  const num = xs.reduce((s, x, i) => s + (x - meanX) * (ys[i] - meanY), 0);
+  const den = xs.reduce((s, x) => s + (x - meanX) ** 2, 0);
+  return den === 0 ? 0 : num / den;
+}
+
+const CONTEXT_TAGS = ['stress', 'caffeine', 'work', 'post-sport', 'rest', 'medication'] as const;
+type ContextTag = typeof CONTEXT_TAGS[number];
+
+const TAG_LABELS_IT: Record<string, string> = {
+  stress:               'Stress',
+  caffeine:             'Caffè',
+  work:                 'Lavoro',
+  'post-sport':         'Post-Sport',
+  rest:                 'Riposo',
+  medication:           'Farmaco',
+  headache:             'Mal di testa',
+  dizziness:            'Vertigini',
+  'chest-pain':         'Dolore al petto',
+  'visual-disturbance': 'Visione offuscata',
+  palpitations:         'Palpitazioni',
+};
+
+interface TagCorrelation {
+  tag: ContextTag;
+  meanSys: number;
+  meanDia: number;
+  deltaSys: number;
+  deltaDia: number;
+  count: number;
+}
+
 interface Stats {
   avgSys: number; minSys: number; maxSys: number; sdSys: number;
   avgDia: number; minDia: number; maxDia: number; sdDia: number;
@@ -421,6 +484,16 @@ interface Stats {
   crisisCount: number;     // sessions with sys>=180 || dia>=120
   dominant: BPCategory;
   catCounts: Record<BPCategory, number>;
+  // ── New analytics ────────────────────────────────────────────────────────
+  trendSlopePerWeek: number | null; // mmHg/week, linear regression on daily sys avg
+  wristCount: number;               // sessions using wrist device
+  dataQuality: 'good' | 'acceptable' | 'insufficient';
+  isTherapeutic: boolean;           // >50% sessions tagged 'medication'
+  bpLoadTherapeutic: number | null; // BP Load at 130/80 (only when isTherapeutic)
+  baselineSys: number;              // avg sys of sessions with no context tags
+  baselineDia: number;              // avg dia of sessions with no context tags
+  baselineCount: number;            // count of no-context sessions
+  tagCorrelations: TagCorrelation[];
 }
 
 const ALL_CATS: BPCategory[] = ['optimal','normal','high-normal','grade1','grade2','grade3'];
@@ -454,6 +527,67 @@ function computeStats(sessions: BPSession[]): Stats {
   const aboveThreshold = sessions.filter(s => s.systolic >= 135 || s.diastolic >= 85).length;
   const bpLoad = sessions.length ? Math.round((aboveThreshold / sessions.length) * 100) : 0;
 
+  const morningDays = uniqueDaySet(morningS).size;
+  const eveningDays = uniqueDaySet(eveningS).size;
+  const totalDays   = uniqueDaySet(sessions).size;
+
+  // ── Trend: linear regression on daily avg sys ─────────────────────────────
+  const dayMap = new Map<string, number[]>();
+  for (const s of sessions) {
+    const d = new Date(s.timestamp);
+    // Zero-padded ISO date so alphabetic sort == chronological sort
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const arr = dayMap.get(key) ?? [];
+    arr.push(s.systolic);
+    dayMap.set(key, arr);
+  }
+  const sortedDayAvgs = Array.from(dayMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, vals]) => vals.reduce((sum, v) => sum + v, 0) / vals.length);
+
+  let trendSlopePerWeek: number | null = null;
+  if (sortedDayAvgs.length >= 3) {
+    const xs = sortedDayAvgs.map((_, i) => i);
+    const slopePerDay = linearRegression(xs, sortedDayAvgs);
+    trendSlopePerWeek = Math.round(slopePerDay * 7 * 10) / 10;
+  }
+
+  // ── Wrist count ───────────────────────────────────────────────────────────
+  const wristCount = sessions.filter(s => s.device === 'wrist').length;
+
+  // ── Dataset quality ───────────────────────────────────────────────────────
+  let dataQuality: 'good' | 'acceptable' | 'insufficient';
+  if (totalDays < 3) {
+    dataQuality = 'insufficient';
+  } else if (totalDays >= 7 && morningDays >= 5 && eveningDays >= 5) {
+    dataQuality = 'good';
+  } else {
+    dataQuality = 'acceptable';
+  }
+
+  // ── Therapeutic target (130/80) ───────────────────────────────────────────
+  const medicationCount = sessions.filter(s => s.tags.includes('medication')).length;
+  const isTherapeutic = sessions.length > 0 && medicationCount / sessions.length > 0.5;
+  const aboveTherapeutic = sessions.filter(s => s.systolic >= 130 || s.diastolic >= 80).length;
+  const bpLoadTherapeutic = isTherapeutic
+    ? Math.round((aboveTherapeutic / sessions.length) * 100)
+    : null;
+
+  // ── Tag correlations ──────────────────────────────────────────────────────
+  const noContextSessions = sessions.filter(s => !CONTEXT_TAGS.some(t => s.tags.includes(t)));
+  const baselineSys = noContextSessions.length ? avg(noContextSessions.map(s => s.systolic)) : avgSys;
+  const baselineDia = noContextSessions.length ? avg(noContextSessions.map(s => s.diastolic)) : avgDia;
+
+  const tagCorrelations: TagCorrelation[] = CONTEXT_TAGS
+    .map((tag): TagCorrelation | null => {
+      const tagged = sessions.filter(s => s.tags.includes(tag));
+      if (tagged.length < 2) return null;
+      const mSys = avg(tagged.map(s => s.systolic));
+      const mDia = avg(tagged.map(s => s.diastolic));
+      return { tag, meanSys: mSys, meanDia: mDia, deltaSys: mSys - baselineSys, deltaDia: mDia - baselineDia, count: tagged.length };
+    })
+    .filter((x): x is TagCorrelation => x !== null);
+
   return {
     avgSys,
     minSys:   minOf(sysList),
@@ -468,13 +602,22 @@ function computeStats(sessions: BPSession[]): Stats {
     map:      Math.round(avgDia + pp / 3),
     bpLoad,
     morningSurge,
-    morningDays: uniqueDaySet(morningS).size,
-    eveningDays: uniqueDaySet(eveningS).size,
-    totalDays:   uniqueDaySet(sessions).size,
+    morningDays,
+    eveningDays,
+    totalDays,
     arrhythmiaCount,
     crisisCount,
     dominant:  classifyBP(avgSys, avgDia),
     catCounts: cats,
+    trendSlopePerWeek,
+    wristCount,
+    dataQuality,
+    isTherapeutic,
+    bpLoadTherapeutic,
+    baselineSys,
+    baselineDia,
+    baselineCount: noContextSessions.length,
+    tagCorrelations,
   };
 }
 
@@ -682,9 +825,14 @@ const DistributionBar: React.FC<{ stats: Stats; total: number }> = ({ stats, tot
 const Footer: React.FC = () => (
   <View style={s.footer} fixed>
     <Text style={s.footerText}>
-      ESC/ESH 2023 HBPM — Ottimale: &lt;120/70 | Normale: 120-129/70-79 | Norm-Alta: 130-134/80-84 | Grado 1: 135-149/85-94 | Grado 2: 150-179/95-109 | Grado 3: &gt;=180/&gt;=110
+      ESC/ESH 2023 HBPM — Ottimale: &lt;120/70 | Normale: 120–129/70–79 | Norm-Alta: 130–134/80–84 | Grado 1: 135–149/85–94 | Grado 2: 150–179/95–109 | Grado 3: &gt;=180/&gt;=110
     </Text>
-    <Text style={s.footerBold}>Pressione PWA · Dati locali, zero cloud</Text>
+    <View style={s.footerRow}>
+      <Text style={[s.footerDisclaimer, { flex: 1 }]}>
+        Avviso medico: strumento di monitoraggio personale. Non sostituisce la valutazione clinica di un medico. Non è un dispositivo medico certificato.
+      </Text>
+      <Text style={[s.footerBold, { marginLeft: 8 }]}>Flow · Dati locali, zero cloud</Text>
+    </View>
   </View>
 );
 
@@ -724,7 +872,7 @@ const ReportDocument: React.FC<ReportOptions> = ({
   return (
     <Document
       title="Rapporto Pressione Arteriosa"
-      author="Pressione PWA"
+      author="Flow"
       subject="Monitoraggio Domiciliare — ESC/ESH 2023"
     >
       {/* ═══════════════════ PAGE 1 ═══════════════════ */}
@@ -771,6 +919,16 @@ const ReportDocument: React.FC<ReportOptions> = ({
 
         <View style={s.body}>
 
+          {/* ── Wrist device warning ── */}
+          {stats.wristCount > 0 && (
+            <View style={s.wristWarning}>
+              <Text style={[s.wristWarningText, { fontFamily: 'Helvetica-Bold' }]}>⚠ Misuratore da polso:</Text>
+              <Text style={s.wristWarningText}>
+                {stats.wristCount} sessioni rilevate con misuratore da polso. Le linee guida ESC/ESH 2023 raccomandano esclusivamente misuratori da braccio validati per il monitoraggio clinico domiciliare.
+              </Text>
+            </View>
+          )}
+
           {/* ── Clinical interpretation box ── */}
           {(() => {
             const isInsufficient = stats.totalDays < 3;
@@ -816,6 +974,16 @@ const ReportDocument: React.FC<ReportOptions> = ({
                     <Text style={s.clinicalMetaLabel}>SD Sys</Text>
                     <Text style={[s.clinicalMetaValue, { color: stats.sdSys > 10 ? C.amber : C.slate700 }]}>
                       {stats.sdSys}
+                    </Text>
+                  </View>
+                  <View style={s.clinicalMetaItem}>
+                    <Text style={s.clinicalMetaLabel}>Qualità dati</Text>
+                    <Text style={[s.clinicalMetaValue, {
+                      color: stats.dataQuality === 'good' ? C.accentGreen
+                           : stats.dataQuality === 'acceptable' ? C.amber
+                           : C.rose,
+                    }]}>
+                      {stats.dataQuality === 'good' ? 'Ottima' : stats.dataQuality === 'acceptable' ? 'Accettabile' : 'Insuf.'}
                     </Text>
                   </View>
                 </View>
@@ -872,7 +1040,26 @@ const ReportDocument: React.FC<ReportOptions> = ({
 
           {/* Trend chart */}
           <View style={s.section}>
-            <Text style={s.sectionTitle}>Andamento nel tempo (media per sessione)</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, borderBottomColor: C.slate200, borderBottomWidth: 1, paddingBottom: 3 }}>
+              <Text style={[s.sectionTitle, { marginBottom: 0, borderBottomWidth: 0, borderBottomColor: 'transparent', paddingBottom: 0, flex: 1 }]}>
+                Andamento nel tempo (media per sessione)
+              </Text>
+              {stats.trendSlopePerWeek !== null && (
+                <Text style={{
+                  fontSize: 7,
+                  fontFamily: 'Helvetica-Bold',
+                  color: Math.abs(stats.trendSlopePerWeek) < 0.5 ? C.slate500
+                       : stats.trendSlopePerWeek > 0 ? C.rose
+                       : C.accentGreen,
+                }}>
+                  {Math.abs(stats.trendSlopePerWeek) < 0.5
+                    ? 'Trend: stabile'
+                    : stats.trendSlopePerWeek > 0
+                    ? `Trend: +${stats.trendSlopePerWeek} mmHg/sett. ↑`
+                    : `Trend: ${stats.trendSlopePerWeek} mmHg/sett. ↓`}
+                </Text>
+              )}
+            </View>
             <TrendChart sessions={[...sessions].sort((a, b) => a.timestamp - b.timestamp)} />
           </View>
 
@@ -904,6 +1091,28 @@ const ReportDocument: React.FC<ReportOptions> = ({
           {/* ── Advanced clinical metrics ── */}
           <View style={s.section}>
             <Text style={s.sectionTitle}>Metriche cliniche avanzate</Text>
+
+            {/* Therapeutic target row — shown only for medicated patients */}
+            {stats.isTherapeutic && stats.bpLoadTherapeutic !== null && (
+              <View style={[s.advRow, { marginBottom: 8 }]}>
+                <View style={[s.advCell, { flex: 2, borderColor: C.indigo, backgroundColor: `${C.indigo}10` }]}>
+                  <Text style={[s.advCellLabel, { color: C.indigo }]}>Target terapeutico 130/80 mmHg</Text>
+                  <Text style={[s.advCellValue, { color: stats.bpLoadTherapeutic > 25 ? C.rose : C.accentGreen }]}>
+                    {stats.bpLoadTherapeutic}% sopra target
+                  </Text>
+                  <Text style={s.advCellSub}>paziente in terapia — soglia ESC/ESH 2023 ridotta a 130/80 mmHg</Text>
+                </View>
+                <View style={s.advCell}>
+                  <Text style={s.advCellLabel}>Sessioni con farmaco</Text>
+                  <Text style={s.advCellValue}>
+                    {sessions.filter(s2 => s2.tags.includes('medication')).length}
+                  </Text>
+                  <Text style={s.advCellSub}>di {sessions.length} totali</Text>
+                </View>
+                <View style={{ flex: 1 }} />
+              </View>
+            )}
+
             <View style={s.advRow}>
               <View style={s.advCell}>
                 <Text style={s.advCellLabel}>BP Load sistolica</Text>
@@ -987,6 +1196,48 @@ const ReportDocument: React.FC<ReportOptions> = ({
             </View>
           </View>
 
+          {/* Tag correlation table */}
+          {stats.tagCorrelations.length > 0 && (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>Correlazione contesto–pressione (vs baseline senza tag)</Text>
+              <View style={s.table}>
+                <View style={s.tableHeader}>
+                  {['Contesto', 'Sistolica', 'Diastolica', 'Δ Sistolica', 'Δ Diastolica', 'Sessioni'].map((h, i) => (
+                    <Text key={h} style={[s.tableCellHeader, { flex: i === 0 ? 1.6 : 1 }]}>{h}</Text>
+                  ))}
+                </View>
+                {/* Baseline row */}
+                {stats.baselineCount >= 1 && (
+                  <View style={[s.tableRow, { backgroundColor: C.slate100 }]}>
+                    <Text style={[s.tableCell, { flex: 1.6, fontFamily: 'Helvetica-Bold', color: C.slate700 }]}>Baseline (nessun contesto)</Text>
+                    <Text style={[s.tableCell, { flex: 1, color: C.rose }]}>{stats.baselineSys}</Text>
+                    <Text style={[s.tableCell, { flex: 1, color: C.indigo }]}>{stats.baselineDia}</Text>
+                    <Text style={[s.tableCell, { flex: 1 }]}>—</Text>
+                    <Text style={[s.tableCell, { flex: 1 }]}>—</Text>
+                    <Text style={[s.tableCell, { flex: 1 }]}>{stats.baselineCount}</Text>
+                  </View>
+                )}
+                {stats.tagCorrelations.map((tc, i) => (
+                  <View key={tc.tag} style={[s.tableRow, i % 2 === 0 ? s.tableRowAlt : {}]}>
+                    <Text style={[s.tableCell, { flex: 1.6 }]}>{TAG_LABELS_IT[tc.tag] ?? tc.tag}</Text>
+                    <Text style={[s.tableCell, { flex: 1, color: C.rose }]}>{tc.meanSys}</Text>
+                    <Text style={[s.tableCell, { flex: 1, color: C.indigo }]}>{tc.meanDia}</Text>
+                    <Text style={[s.tableCell, { flex: 1, color: tc.deltaSys > 5 ? C.rose : tc.deltaSys < -5 ? C.accentGreen : C.slate700, fontFamily: 'Helvetica-Bold' }]}>
+                      {tc.deltaSys > 0 ? `+${tc.deltaSys}` : `${tc.deltaSys}`}
+                    </Text>
+                    <Text style={[s.tableCell, { flex: 1, color: tc.deltaDia > 5 ? C.rose : tc.deltaDia < -5 ? C.accentGreen : C.slate700, fontFamily: 'Helvetica-Bold' }]}>
+                      {tc.deltaDia > 0 ? `+${tc.deltaDia}` : `${tc.deltaDia}`}
+                    </Text>
+                    <Text style={[s.tableCell, { flex: 1 }]}>{tc.count}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={{ fontSize: 6.5, color: C.slate500, marginTop: 4 }}>
+                Δ = differenza rispetto al baseline. Valori &gt;+5 mmHg sistolica indicano correlazione clinica rilevante.
+              </Text>
+            </View>
+          )}
+
           {/* Morning vs Evening */}
           {(morning.length > 0 || evening.length > 0) && (
             <View style={s.section}>
@@ -1061,7 +1312,7 @@ const ReportDocument: React.FC<ReportOptions> = ({
           {/* Session history */}
           <View style={s.section}>
             <Text style={s.sectionTitle}>
-              Registro sessioni ({tableSessions.length} totali · prima scartata per protocollo)
+              Registro sessioni ({tableSessions.length} {tableSessions.length === 1 ? 'sessione' : 'sessioni'} · medie delle letture ufficiali, 1ª lettura di riscaldamento esclusa)
             </Text>
             <View style={s.table}>
               <View style={s.tableHeader}>
@@ -1071,11 +1322,12 @@ const ReportDocument: React.FC<ReportOptions> = ({
                   }]}>{h}</Text>
                 ))}
               </View>
-              {tableSessions.slice(0, 60).map((s2, i) => {
+              {tableSessions.map((s2, i) => {
                 const dt = new Date(s2.timestamp);
                 const dateStr = dt.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })
                   + ' ' + dt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-                const tagParts = s2.device === 'wrist' ? ['polso', ...s2.tags] : [...s2.tags];
+                const tagLabels = s2.tags.map((t) => TAG_LABELS_IT[t] ?? t);
+                const tagParts = s2.device === 'wrist' ? ['Polso', ...tagLabels] : [...tagLabels];
                 const tagStr = tagParts.length > 3
                   ? tagParts.slice(0, 3).join(', ') + ` +${tagParts.length - 3}`
                   : tagParts.join(', ');
@@ -1100,13 +1352,6 @@ const ReportDocument: React.FC<ReportOptions> = ({
                   </View>
                 );
               })}
-              {tableSessions.length > 60 && (
-                <View style={[s.tableRow, { justifyContent: 'center' }]}>
-                  <Text style={[s.tableCell, { color: C.slate500, textAlign: 'center' }]}>
-                    ... e altre {tableSessions.length - 60} sessioni non mostrate
-                  </Text>
-                </View>
-              )}
             </View>
           </View>
 

@@ -477,6 +477,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
   ]);
   const [errors, setErrors]   = useState<FormFieldError>({});
   const [timestamps, setTimestamps] = useState<number[]>([]);
+  const [customDate, setCustomDate] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // ─── Tag toggle ───────────────────────────────────────────────────────
@@ -527,6 +528,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
     setIsSaving(true);
     try {
       const sessionId = generateSessionId();
+      const baseTime = customDate ? new Date(customDate).getTime() : null;
       const payload: SessionPayload = {
         sessionId,
         tags,
@@ -535,7 +537,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
         device,
         hasIrregularHeartbeat: hasIrregularHeartbeat || undefined,
         readings: readings.map((r, i) => ({
-          timestamp:    timestamps[i] ?? Date.now(),
+          timestamp:    baseTime !== null ? baseTime + i * 60_000 : (timestamps[i] ?? Date.now()),
           systolic:     Number(r.systolic),
           diastolic:    Number(r.diastolic),
           heartRate:    Number(r.heartRate),
@@ -553,10 +555,11 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
       setHasIrregularHeartbeat(false);
       setReadings([EMPTY_READING, EMPTY_READING, EMPTY_READING].map((r) => ({ ...r })));
       setTimestamps([]);
+      setCustomDate('');
     } finally {
       setIsSaving(false);
     }
-  }, [readings, tags, note, arm, hasIrregularHeartbeat, timestamps, onSave]);
+  }, [readings, tags, note, arm, device, hasIrregularHeartbeat, timestamps, customDate, onSave]);
 
   const handleRedo = useCallback(() => {
     setStep('breathing');
@@ -565,6 +568,7 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
     setHasIrregularHeartbeat(false);
     setReadings([EMPTY_READING, EMPTY_READING, EMPTY_READING].map((r) => ({ ...r })));
     setTimestamps([]);
+    setCustomDate('');
     setErrors({});
   }, []);
 
@@ -773,6 +777,24 @@ const SessionForm: React.FC<SessionFormProps> = ({ onSave }) => {
                 maxLength={500}
                 className="w-full bg-slate-800 border-2 border-slate-700 focus:border-emerald-500 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 resize-none focus:outline-none transition-colors"
               />
+            </div>
+
+            {/* Past date override */}
+            <div>
+              <label htmlFor="session-date" className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                Data e ora
+              </label>
+              <input
+                id="session-date"
+                type="datetime-local"
+                value={customDate}
+                max={new Date().toISOString().slice(0, 16)}
+                onChange={(e) => setCustomDate(e.target.value)}
+                className="w-full bg-slate-800 border-2 border-slate-700 focus:border-emerald-500 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none transition-colors [color-scheme:dark]"
+              />
+              <p className="text-xs text-slate-600 mt-1">
+                Lascia vuoto per registrare adesso — modifica solo per inserire misurazioni passate
+              </p>
             </div>
 
             <motion.button

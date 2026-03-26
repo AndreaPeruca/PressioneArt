@@ -26,16 +26,25 @@ function quoteField(value: string): string {
   return value;
 }
 
+/** Prevent CSV formula injection: Excel/Sheets treat leading =, +, -, @, tab, CR as formulas. */
+function sanitizeCsvCell(value: string): string {
+  if (!value) return '';
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 export function exportSessionsCSV(sessions: BPSession[]): void {
-  const header = 'Data,Sistolica,Diastolica,Frequenza,Tag,Nota';
+  const header = 'Data,Sistolica,Diastolica,Frequenza,Tag,Nota,Dispositivo,Irregolare';
 
   const rows = [...sessions]
     .sort((a, b) => a.timestamp - b.timestamp)
     .map((s) => {
-      const date = formatDate(s.timestamp);
-      const tags = s.tags.join(';');
-      const note = quoteField(s.note ?? '');
-      return `${date},${s.systolic},${s.diastolic},${s.heartRate},${tags},${note}`;
+      const date   = formatDate(s.timestamp);
+      const tags   = s.tags.join(';');
+      const note   = quoteField(sanitizeCsvCell(s.note ?? ''));
+      const device = s.device ?? 'arm';
+      const allReadings = [s.warmupReading, ...s.officialReadings].filter(Boolean);
+      const irregular = allReadings.some((r) => r?.hasIrregularHeartbeat) ? 'si' : '';
+      return `${date},${s.systolic},${s.diastolic},${s.heartRate},${tags},${note},${device},${irregular}`;
     });
 
   const csv  = [header, ...rows].join('\r\n');
@@ -47,7 +56,7 @@ export function exportSessionsCSV(sessions: BPSession[]): void {
   }).replace(/\//g, '-');
 
   a.href     = url;
-  a.download = `pressione_export_${date}.csv`;
+  a.download = `flow_export_${date}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

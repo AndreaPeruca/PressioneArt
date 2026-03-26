@@ -85,7 +85,7 @@ export interface ChartDataPoint {
 
 // ─── Period Filter ────────────────────────────────────────────────────────────
 
-export type PeriodFilter = 'today' | '7d' | '30d' | 'all';
+export type PeriodFilter = 'today' | '7d' | '30d' | 'all' | 'custom';
 
 // ─── CSV Import ───────────────────────────────────────────────────────────────
 

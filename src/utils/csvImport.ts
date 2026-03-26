@@ -20,15 +20,15 @@
  */
 
 import { validateMeasurement } from '../db/database';
-import type { ImportRow, MeasurementTag, ParseResult } from '../types';
+import type { ImportRow, MeasurementDevice, MeasurementTag, ParseResult } from '../types';
 
 // ─── Template ─────────────────────────────────────────────────────────────────
 
 export const CSV_TEMPLATE = [
-  'Data,Sistolica,Diastolica,Frequenza,Tag,Nota',
-  '15/01/2024 08:30,130,85,72,stress;caffeine,Prima colazione',
-  '15/01/2024 20:00,125,82,70,,Sera',
-  '16/01/2024 08:15,128,84,68,rest,Dopo riposo',
+  'Data,Sistolica,Diastolica,Frequenza,Tag,Nota,Dispositivo,Irregolare',
+  '15/01/2024 08:30,130,85,72,stress;caffeine,Prima colazione,arm,',
+  '15/01/2024 20:00,125,82,70,,Sera,arm,',
+  '16/01/2024 08:15,128,84,68,rest,Dopo riposo,wrist,si',
 ].join('\r\n');
 
 export const VALID_TAGS = new Set<MeasurementTag>([
@@ -123,15 +123,19 @@ interface ColMap {
   frequenza: number;
   tag: number;
   nota: number;
+  dispositivo: number;
+  irregolare: number;
 }
 
 const HEADER_ALIASES: Record<keyof ColMap, string[]> = {
-  data:       ['data', 'date', 'datetime', 'timestamp'],
-  sistolica:  ['sistolica', 'sys', 'systolic', 'sist'],
-  diastolica: ['diastolica', 'dia', 'diastolic', 'diast'],
-  frequenza:  ['frequenza', 'fc', 'hr', 'heartrate', 'bpm', 'pulse'],
-  tag:        ['tag', 'tags', 'contesto'],
-  nota:       ['nota', 'note', 'notes', 'commento'],
+  data:        ['data', 'date', 'datetime', 'timestamp'],
+  sistolica:   ['sistolica', 'sys', 'systolic', 'sist'],
+  diastolica:  ['diastolica', 'dia', 'diastolic', 'diast'],
+  frequenza:   ['frequenza', 'fc', 'hr', 'heartrate', 'bpm', 'pulse'],
+  tag:         ['tag', 'tags', 'contesto'],
+  nota:        ['nota', 'note', 'notes', 'commento'],
+  dispositivo: ['dispositivo', 'device', 'strumento'],
+  irregolare:  ['irregolare', 'irregular', 'arrhythmia', 'aritmia'],
 };
 
 function detectColumns(headerFields: string[]): ColMap | null {
@@ -265,7 +269,15 @@ export function parseCSV(content: string): ParseResult {
     // ── Note ──
     const note = get(colMap.nota) || undefined;
 
-    valid.push({ timestamp, systolic, diastolic, heartRate, tags, note });
+    // ── Device ──
+    const rawDevice = get(colMap.dispositivo).toLowerCase();
+    const device: MeasurementDevice = rawDevice === 'wrist' || rawDevice === 'polso' ? 'wrist' : 'arm';
+
+    // ── Irregular heartbeat ──
+    const rawIrr = get(colMap.irregolare).toLowerCase();
+    const hasIrregularHeartbeat = ['si', 'sì', 'yes', '1', 'true'].includes(rawIrr) ? true : undefined;
+
+    valid.push({ timestamp, systolic, diastolic, heartRate, tags, note, device, hasIrregularHeartbeat });
   }
 
   return { valid, errors };
@@ -279,7 +291,7 @@ export function downloadTemplate(): void {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = 'pressione_template.csv';
+  a.download = 'flow_template.csv';
   a.click();
   URL.revokeObjectURL(url);
 }

@@ -57,20 +57,36 @@ const ReportModal: React.FC<ReportModalProps> = ({
         generatedAt: new Date(),
       });
 
-      // Trigger download
-      const url      = URL.createObjectURL(blob);
-      const anchor   = document.createElement('a');
       const datePart = new Date().toLocaleDateString('it-IT', {
         day: '2-digit', month: '2-digit', year: 'numeric',
       }).replace(/\//g, '-');
       // Strip filesystem-illegal characters and path separators from the name.
-      // Also omit the patient name from the filename to avoid embedding PHI
-      // in browser download history, Recent Files, and cloud sync logs.
       const namePart = patientName.trim()
         ? `_${patientName.trim().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, '_').slice(0, 40)}`
         : '';
+
+      // Try Web Share API first (mobile/supported browsers)
+      const fileName = `flow_report${namePart}_${datePart}.pdf`;
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Report pressione arteriosa' });
+          setStep('done');
+          return;
+        } catch (shareErr) {
+          // User cancelled share or share failed — fall through to download
+          if (shareErr instanceof Error && shareErr.name === 'AbortError') {
+            setStep('form');
+            return;
+          }
+        }
+      }
+
+      // Fallback: trigger download
+      const url      = URL.createObjectURL(blob);
+      const anchor   = document.createElement('a');
       anchor.href     = url;
-      anchor.download = `pressione_report${namePart}_${datePart}.pdf`;
+      anchor.download = fileName;
       anchor.click();
       URL.revokeObjectURL(url);
 
@@ -155,12 +171,12 @@ const ReportModal: React.FC<ReportModalProps> = ({
                         Contenuto del report
                       </p>
                       {[
-                        '📊 Medie sistolica / diastolica / frequenza',
-                        '📈 Grafico di trend (sessioni nel periodo)',
-                        '🕐 Analisi mattina vs sera',
-                        '📅 Medie settimanali',
-                        '📋 Registro completo sessioni',
-                        '🏷️ Distribuzione categorie ESC/ESH',
+                        '🩺 Sintesi clinica HBPM (controllata / non controllata)',
+                        '📊 Medie, variabilità (SD), BP Load, surge mattutino',
+                        '📈 Grafico di trend con pendenza mmHg/settimana',
+                        '🏷️ Correlazione contesto–pressione per tag',
+                        '🕐 Analisi mattina vs sera · medie settimanali',
+                        '📋 Registro completo sessioni con categorie ESC/ESH',
                       ].map((item) => (
                         <div key={item} className="flex items-center gap-2">
                           <span className="text-xs text-slate-300">{item}</span>
@@ -206,6 +222,16 @@ const ReportModal: React.FC<ReportModalProps> = ({
                         </p>
                       </div>
                     </div>
+
+                    {periodSessions > 200 && (
+                      <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+                        <span className="text-amber-400 text-sm flex-shrink-0 mt-0.5" aria-hidden="true">⚠️</span>
+                        <p className="text-xs text-amber-300 leading-relaxed">
+                          <strong>{periodSessions} sessioni</strong> — il report potrebbe richiedere alcuni secondi in più per la generazione.
+                          Considera di filtrare un periodo più breve (es. 30 giorni) per un PDF più maneggevole.
+                        </p>
+                      </div>
+                    )}
 
                     {hasNonLatinNotes && (
                       <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">

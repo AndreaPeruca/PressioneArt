@@ -1,0 +1,28 @@
+{
+  "name": "Flow — Blood Pressure Monitor",
+  "short_name": "Flow",
+  "description": "Monitora la pressione arteriosa seguendo il protocollo HBPM ESC/ESH 2023. Tutti i dati rimangono nel dispositivo.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "it",
+  "categories": ["health", "medical"],
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}

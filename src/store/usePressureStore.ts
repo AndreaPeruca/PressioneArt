@@ -21,12 +21,13 @@ import { db } from '../db/database';
 // BroadcastChannel notifies other open tabs when data changes so they refresh.
 // Messages are NOT sent back to the originating tab, preventing double-fetches.
 const syncChannel = typeof BroadcastChannel !== 'undefined'
-  ? new BroadcastChannel('pressione-sync')
+  ? new BroadcastChannel('flow-sync')
   : null;
 import type {
   BPSession,
   ChartDataPoint,
   ImportRow,
+  MeasurementDevice,
   MeasurementTag,
   SessionPayload,
 } from '../types';
@@ -64,6 +65,7 @@ interface PressureState {
   deleteSession:      (sessionId: string) => Promise<void>;
   clearAll:           () => Promise<void>;
   importMeasurements: (rows: ImportRow[]) => Promise<{ count: number }>;
+  updateSessionMeta:  (sessionId: string, meta: { tags: MeasurementTag[]; note?: string; device?: MeasurementDevice }) => Promise<void>;
   clearError:         () => void;
 }
 
@@ -157,6 +159,16 @@ export const usePressureStore = create<PressureState>((set, get) => {
         isLoading: false,
       });
       throw err;
+    }
+  },
+
+  updateSessionMeta: async (sessionId, meta) => {
+    try {
+      await db.updateSessionMeta(sessionId, meta);
+      await get().fetchSessions();
+      syncChannel?.postMessage('refresh');
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Errore nella modifica.' });
     }
   },
 

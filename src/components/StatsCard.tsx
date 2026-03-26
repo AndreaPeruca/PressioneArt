@@ -76,9 +76,9 @@ function computeStats(measurements: BPMeasurement[]): Stats {
   const pp     = avgSys - avgDia;
   const map    = round(avgDia + pp / 3);
 
-  // Morning surge: compare morning (5–11h) vs evening (17–23h) average systolic
-  const morningM = measurements.filter((m) => { const h = new Date(m.timestamp).getHours(); return h >= 5 && h < 12; });
-  const eveningM = measurements.filter((m) => { const h = new Date(m.timestamp).getHours(); return h >= 17 && h < 24; });
+  // Morning surge: ESC/ESH 2023 windows — morning 06:00–10:00, evening 18:00–23:00
+  const morningM = measurements.filter((m) => { const h = new Date(m.timestamp).getHours(); return h >= 6 && h < 10; });
+  const eveningM = measurements.filter((m) => { const h = new Date(m.timestamp).getHours(); return h >= 18 && h < 23; });
   let morningSurge: number | null = null;
   if (morningM.length >= 1 && eveningM.length >= 1) {
     const morningAvg = morningM.reduce((a, m) => a + m.systolic, 0) / morningM.length;
@@ -220,8 +220,8 @@ const StatsCard: React.FC<StatsCardProps> = ({ measurements, periodLabel }) => {
         <StatCell
           label="Surge mattutino"
           value={stats.morningSurge !== null ? (stats.morningSurge > 0 ? `+${stats.morningSurge}` : String(stats.morningSurge)) : '—'}
-          sub={stats.morningSurge !== null ? (stats.morningSurge > 20 ? '⚠ elevato' : 'mmHg sys') : 'dati insufficienti'}
-          color={stats.morningSurge !== null && stats.morningSurge > 20 ? '#f59e0b' : '#64748b'}
+          sub={stats.morningSurge !== null ? (stats.morningSurge > 15 ? '⚠ elevato' : 'mmHg sys') : 'dati insufficienti'}
+          color={stats.morningSurge !== null && stats.morningSurge > 15 ? '#f59e0b' : '#64748b'}
         />
       </div>
 

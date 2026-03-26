@@ -58,12 +58,12 @@ const PRIVACY_POINTS = [
   {
     icon: '📱',
     title: 'Solo sul tuo dispositivo',
-    body: 'I tuoi dati non lasciano mai questo dispositivo. Non esiste alcun server.',
+    body: 'I tuoi dati non lasciano mai questo dispositivo. Non esiste alcun server, nessun cloud.',
   },
   {
     icon: '🔒',
-    title: 'Struttura cifrata (prossimamente)',
-    body: 'Il database è predisposto per AES-256-GCM lato client. Le tue misurazioni sono già isolate in IndexedDB, accessibili solo a questa app.',
+    title: 'Database locale isolato',
+    body: 'Le misurazioni sono salvate in IndexedDB, accessibile esclusivamente da questa app. La cifratura è pianificata per una versione futura.',
   },
   {
     icon: '🚫',
@@ -83,12 +83,11 @@ const PRIVACY_POINTS = [
 ] as const;
 
 const TECH_DETAILS = [
-  { label: 'Storage engine',   value: 'IndexedDB via Dexie.js' },
-  { label: 'Persistence',      value: 'Browser locale — no cloud sync' },
-  { label: 'Encryption (v2)',  value: 'AES-256-GCM, chiave derivata da PIN utente (PBKDF2)' },
-  { label: 'Network calls',    value: 'Nessuna — architettura Zero-Backend' },
-  { label: 'OCR (opzionale)',  value: 'Tesseract.js — elaborazione esclusivamente in Web Worker locale' },
-  { label: 'Telemetry',        value: 'Assente' },
+  { label: 'Storage engine',  value: 'IndexedDB via Dexie.js' },
+  { label: 'Persistence',     value: 'Browser locale — nessun cloud sync' },
+  { label: 'Cifratura',       value: 'Pianificata — non ancora attiva' },
+  { label: 'Network calls',   value: 'Nessuna — architettura Zero-Backend' },
+  { label: 'Telemetry',       value: 'Assente' },
 ] as const;
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -175,6 +174,16 @@ const PrivacyWidget: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Medical disclaimer */}
+      <div className="mt-4 pt-4 border-t border-slate-700/60">
+        <p className="text-xs text-slate-500 leading-relaxed">
+          <strong className="text-slate-400">Avviso medico:</strong>{' '}
+          Questa app è uno strumento di monitoraggio personale e non è un dispositivo medico certificato.
+          I valori visualizzati sono puramente informativi e non sostituiscono la valutazione clinica di un medico.
+          Consulta sempre il tuo medico per la diagnosi e il trattamento dell'ipertensione.
+        </p>
+      </div>
     </section>
   );
 };

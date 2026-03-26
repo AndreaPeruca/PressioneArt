@@ -65,6 +65,7 @@ const BreathingTimer: React.FC<BreathingTimerProps> = ({
 }) => {
   const [elapsed, setElapsed]       = useState(0);
   const [phase, setPhase]           = useState<BreathPhase>('inhale');
+  const [isStarted, setIsStarted]   = useState(false);
   const [isSkipped, setIsSkipped]   = useState(false);
   const intervalRef                  = useRef<ReturnType<typeof setInterval> | null>(null);
   const prefersReducedMotion         = useReducedMotion();
@@ -76,7 +77,6 @@ const BreathingTimer: React.FC<BreathingTimerProps> = ({
   const tick = useCallback(() => {
     setElapsed((prev) => {
       const next = prev + 1;
-      // Update breath phase based on position in cycle
       const cyclePosition = next % CYCLE_SECONDS;
       setPhase(cyclePosition < INHALE_SECONDS ? 'inhale' : 'exhale');
       return next;
@@ -84,14 +84,14 @@ const BreathingTimer: React.FC<BreathingTimerProps> = ({
   }, []);
 
   useEffect(() => {
-    if (isSkipped) return;
+    if (!isStarted || isSkipped) return;
 
     intervalRef.current = setInterval(tick, 1000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [tick, isSkipped]);
+  }, [tick, isStarted, isSkipped]);
 
   // ─── Completion ───────────────────────────────────────────────────────
 
@@ -113,16 +113,15 @@ const BreathingTimer: React.FC<BreathingTimerProps> = ({
   const breathRadius = phase === 'inhale' ? BREATH_MAX_RADIUS : BREATH_MIN_RADIUS;
   const dashOffset   = progressOffset(elapsed, durationSeconds);
 
-  const phaseLabel   = phase === 'inhale' ? 'Inspira' : 'Espira';
-  const phaseColor   = phase === 'inhale' ? '#10b981' : '#6366f1'; // emerald / indigo
+  const phaseLabel = phase === 'inhale' ? 'Inspira' : 'Espira';
+  const phaseColor = phase === 'inhale' ? '#10b981' : '#6366f1';
 
   // ─── Render ───────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col items-center gap-6 py-6 select-none">
-      {/* Accessible live region for screen readers */}
       <p className="sr-only" aria-live="polite">
-        {phaseLabel} – Tempo rimanente: {formatTime(remaining)}
+        {isStarted ? `${phaseLabel} – Tempo rimanente: ${formatTime(remaining)}` : 'Premi play per iniziare la respirazione guidata'}
       </p>
 
       {/* SVG Biofeedback Canvas */}
@@ -134,102 +133,88 @@ const BreathingTimer: React.FC<BreathingTimerProps> = ({
         role="img"
       >
         {/* Background track ring */}
-        <circle
-          cx={CENTER}
-          cy={CENTER}
-          r={TRACK_RADIUS}
-          fill="none"
-          stroke="#1e293b"
-          strokeWidth={6}
-        />
+        <circle cx={CENTER} cy={CENTER} r={TRACK_RADIUS} fill="none" stroke="#1e293b" strokeWidth={6} />
 
-        {/* Animated progress ring */}
-        <circle
-          cx={CENTER}
-          cy={CENTER}
-          r={TRACK_RADIUS}
-          fill="none"
-          stroke="#10b981"
-          strokeWidth={6}
-          strokeLinecap="round"
-          strokeDasharray={TRACK_CIRCUMFERENCE}
-          strokeDashoffset={dashOffset}
-          transform={`rotate(-90 ${CENTER} ${CENTER})`}
-          style={{ transition: 'stroke-dashoffset 1s linear' }}
-        />
-
-        {/* Breathing orb – SVG foreignObject wraps the Framer Motion div */}
-        {prefersReducedMotion ? (
-          // Static circle for reduced-motion users
+        {/* Progress ring — hidden until started */}
+        {isStarted && (
           <circle
             cx={CENTER}
             cy={CENTER}
-            r={BREATH_MIN_RADIUS}
-            fill={phaseColor}
-            fillOpacity={0.15}
-            stroke={phaseColor}
-            strokeWidth={2}
-          />
-        ) : (
-          <motion.circle
-            cx={CENTER}
-            cy={CENTER}
-            r={breathRadius}
-            fill={phaseColor}
-            fillOpacity={0.12}
-            stroke={phaseColor}
-            strokeWidth={2}
-            animate={{ r: breathRadius, fill: phaseColor, stroke: phaseColor }}
-            transition={{
-              duration: phase === 'inhale' ? INHALE_SECONDS : EXHALE_SECONDS,
-              ease: phase === 'inhale' ? 'easeIn' : 'easeOut',
-            }}
+            r={TRACK_RADIUS}
+            fill="none"
+            stroke="#10b981"
+            strokeWidth={6}
+            strokeLinecap="round"
+            strokeDasharray={TRACK_CIRCUMFERENCE}
+            strokeDashoffset={dashOffset}
+            transform={`rotate(-90 ${CENTER} ${CENTER})`}
+            style={{ transition: 'stroke-dashoffset 1s linear' }}
           />
         )}
 
-        {/* Phase label inside the ring */}
-        <text
-          x={CENTER}
-          y={CENTER - 6}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill={phaseColor}
-          fontSize={13}
-          fontWeight={600}
-          fontFamily="system-ui, sans-serif"
-          style={{ transition: 'fill 0.5s ease' }}
-        >
-          {phaseLabel}
-        </text>
+        {/* Breathing orb */}
+        {isStarted ? (
+          prefersReducedMotion ? (
+            <circle cx={CENTER} cy={CENTER} r={BREATH_MIN_RADIUS} fill={phaseColor} fillOpacity={0.15} stroke={phaseColor} strokeWidth={2} />
+          ) : (
+            <motion.circle
+              cx={CENTER} cy={CENTER} r={breathRadius}
+              fill={phaseColor} fillOpacity={0.12} stroke={phaseColor} strokeWidth={2}
+              animate={{ r: breathRadius, fill: phaseColor, stroke: phaseColor }}
+              transition={{ duration: phase === 'inhale' ? INHALE_SECONDS : EXHALE_SECONDS, ease: phase === 'inhale' ? 'easeIn' : 'easeOut' }}
+            />
+          )
+        ) : (
+          /* Static idle orb */
+          <circle cx={CENTER} cy={CENTER} r={BREATH_MIN_RADIUS} fill="#10b981" fillOpacity={0.08} stroke="#10b981" strokeOpacity={0.3} strokeWidth={2} />
+        )}
 
-        {/* Countdown timer */}
-        <text
-          x={CENTER}
-          y={CENTER + 14}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill="#94a3b8"
-          fontSize={11}
-          fontFamily="system-ui, sans-serif"
-        >
-          {formatTime(remaining)}
-        </text>
+        {/* Center text */}
+        {isStarted ? (
+          <>
+            <text x={CENTER} y={CENTER - 6} textAnchor="middle" dominantBaseline="middle" fill={phaseColor} fontSize={13} fontWeight={600} fontFamily="system-ui, sans-serif" style={{ transition: 'fill 0.5s ease' }}>
+              {phaseLabel}
+            </text>
+            <text x={CENTER} y={CENTER + 14} textAnchor="middle" dominantBaseline="middle" fill="#94a3b8" fontSize={11} fontFamily="system-ui, sans-serif">
+              {formatTime(remaining)}
+            </text>
+          </>
+        ) : (
+          <text x={CENTER} y={CENTER} textAnchor="middle" dominantBaseline="middle" fill="#475569" fontSize={11} fontFamily="system-ui, sans-serif">
+            {formatTime(durationSeconds)}
+          </text>
+        )}
       </svg>
 
       {/* Instructional copy */}
       <p className="text-slate-400 text-sm text-center max-w-xs leading-relaxed">
-        Siediti comodamente. Segui il ritmo del cerchio per 2 minuti prima di
-        misurare la pressione. Questo riduce l'ansia da misurazione.
+        {isStarted
+          ? 'Segui il ritmo del cerchio. Respira lentamente per ridurre l\'ansia da misurazione.'
+          : 'Siediti comodamente e premi play quando sei pronto. La respirazione guidata migliora l\'accuratezza della misurazione.'}
       </p>
 
-      {/* Skip control */}
-      <button
-        type="button"
-        onClick={handleSkip}
-        className="text-xs text-slate-500 underline underline-offset-2 hover:text-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 rounded"
-      >
-        Salta e misura subito
-      </button>
+      {/* Controls */}
+      {!isStarted ? (
+        <button
+          type="button"
+          onClick={() => setIsStarted(true)}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400"
+          aria-label="Avvia respirazione guidata"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          Inizia
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={handleSkip}
+          className="text-xs text-slate-500 underline underline-offset-2 hover:text-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 rounded"
+        >
+          Salta e misura subito
+        </button>
+      )}
     </div>
   );
 };
